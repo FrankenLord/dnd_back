@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Initiative Terminal</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="terminal">
+
+    <div class="header">
+        <pre>
+███╗   ██╗██╗ ██████╗ ███████╗
+████╗  ██║██║██╔════╝ ██╔════╝
+██╔██╗ ██║██║██║  ███╗█████╗  
+██║╚██╗██║██║██║   ██║██╔══╝  
+██║ ╚████║██║╚██████╔╝███████╗
+╚═╝  ╚═══╝╚═╝ ╚═════╝ ╚══════╝
+        </pre>
+    </div>
+
+    <div class="info-line">
+        Local Server: <span id="status">ONLINE</span>
+    </div>
+
+    <div class="initiative-container">
+        <div class="title">INITIATIVE ORDER</div>
+        <div id="initiative-list"></div>
+    </div>
+
+    <button onclick="clearInitiative()">CLEAR INITIATIVE</button>
+    
+    <div class="add-panel">
+        <select id="character-select"></select>
+        <input type="number" id="initiative-input" placeholder="Initiative">
+        <button onclick="addToInitiative()">ADD</button>
+    </div>
+
+    <div class="footer">
+        F1-Help | F2-Refresh | F3-Clear | F4-Quit
+    </div>
+
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>

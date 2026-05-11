@@ -1,0 +1,47 @@
+body {
+    background: black;
+    color: #33ff33;
+    font-family: "Courier New", monospace;
+    margin: 0;
+}
+
+.terminal {
+    padding: 20px;
+    border: 2px solid #33ff33;
+    margin: 10px;
+}
+
+.header pre {
+    color: #33ff33;
+    text-shadow: 0 0 5px #00ff00;
+}
+
+.info-line {
+    margin: 10px 0;
+}
+
+.initiative-container {
+    border-top: 1px solid #33ff33;
+    padding-top: 10px;
+}
+
+.title {
+    margin-bottom: 10px;
+    font-weight: bold;
+}
+
+.entry {
+    padding: 4px;
+}
+
+.entry.current {
+    background: #33ff33;
+    color: black;
+}
+
+.footer {
+    margin-top: 20px;
+    border-top: 1px solid #33ff33;
+    padding-top: 10px;
+    opacity: 0.7;
+}
