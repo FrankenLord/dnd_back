@@ -2,46 +2,163 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Initiative Terminal</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DCC Initiative</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+<main class="terminal">
+    <header class="header">
+        <div>
+            <h1>DCC Initiative</h1>
+            <p>Local Server: <span id="status">ONLINE</span></p>
+        </div>
+        <button id="change-role-button" class="ghost-button">Сменить роль</button>
+    </header>
 
-<div class="terminal">
+    <section id="role-screen" class="role-screen">
+        <button id="player-role-button">Я игрок</button>
+        <button id="master-role-button">Я мастер</button>
+    </section>
 
-    <div class="header">
-        <pre>
-███╗   ██╗██╗ ██████╗ ███████╗
-████╗  ██║██║██╔════╝ ██╔════╝
-██╔██╗ ██║██║██║  ███╗█████╗  
-██║╚██╗██║██║██║   ██║██╔══╝  
-██║ ╚████║██║╚██████╔╝███████╗
-╚═╝  ╚═══╝╚═╝ ╚═════╝ ╚══════╝
-        </pre>
-    </div>
+    <section id="master-login" class="panel hidden">
+        <h2>Вход мастера</h2>
+        <div class="row">
+            <input id="master-password-input" type="password" placeholder="Пароль мастера">
+            <button id="master-login-button">Войти</button>
+        </div>
+        <p id="master-login-error" class="error-text"></p>
+    </section>
 
-    <div class="info-line">
-        Local Server: <span id="status">ONLINE</span>
-    </div>
+    <section id="player-setup" class="panel hidden">
+        <h2>Выбор персонажа</h2>
+        <div class="row">
+            <select id="player-character-select"></select>
+            <button id="save-player-button">Играть этим персонажем</button>
+        </div>
 
-    <div class="initiative-container">
-        <div class="title">INITIATIVE ORDER</div>
-        <div id="initiative-list"></div>
-    </div>
+        <section class="panel">
+            <h2>Создать персонажа</h2>
+            <div class="character-form">
+                <input id="new-character-name" placeholder="Имя">
+                <input id="new-character-class" placeholder="Класс">
+                <input id="new-character-hp" type="number" min="1" placeholder="HP">
+                <input id="new-character-str" type="number" placeholder="STR">
+                <input id="new-character-dex" type="number" placeholder="DEX">
+                <input id="new-character-con" type="number" placeholder="CON">
+                <input id="new-character-int" type="number" placeholder="INT">
+                <input id="new-character-wis" type="number" placeholder="WIS">
+                <input id="new-character-luc" type="number" placeholder="LUC">
+                <button id="create-character-button">Создать и выбрать</button>
+            </div>
+        </section>
+    </section>
 
-    <button onclick="clearInitiative()">CLEAR INITIATIVE</button>
-    
-    <div class="add-panel">
-        <select id="character-select"></select>
-        <input type="number" id="initiative-input" placeholder="Initiative">
-        <button onclick="addToInitiative()">ADD</button>
-    </div>
+    <section id="master-view" class="hidden">
+        <div class="toolbar">
+            <button id="next-turn-button">Следующий ход</button>
+            <button id="clear-button">Очистить инициативу</button>
+        </div>
 
-    <div class="footer">
-        F1-Help | F2-Refresh | F3-Clear | F4-Quit
-    </div>
+        <section class="panel">
+            <h2>Добавить персонажа</h2>
+            <div class="grid-form">
+                <select id="character-select"></select>
+                <input type="number" id="initiative-input" placeholder="Инициатива">
+                <button id="add-character-button">Добавить</button>
+            </div>
+        </section>
 
-</div>
+        <section class="panel">
+            <h2>Добавить монстра</h2>
+            <div class="grid-form">
+                <input id="monster-name-input" placeholder="Имя монстра">
+                <input type="number" id="monster-hp-input" placeholder="HP" min="1">
+                <input type="number" id="monster-initiative-input" placeholder="Инициатива">
+                <button id="add-monster-button">Добавить</button>
+            </div>
+        </section>
+
+        <section class="panel">
+            <h2>Initiative Order</h2>
+            <div id="initiative-list"></div>
+        </section>
+
+        <section class="panel">
+            <h2>Лист персонажа игрока</h2>
+            <div class="row">
+                <select id="master-sheet-select"></select>
+                <button id="open-master-sheet-button">Открыть лист</button>
+            </div>
+        </section>
+    </section>
+
+    <section id="player-view" class="hidden">
+        <section class="turn-card">
+            <div id="turn-status" class="turn-status">СЕЙЧАС НЕ ТВОЙ ХОД</div>
+        </section>
+
+        <section class="panel">
+            <div class="row">
+                <h2 id="player-name">Персонаж</h2>
+                <button id="open-player-sheet-button">Лист персонажа</button>
+            </div>
+            <div id="player-summary"></div>
+        </section>
+
+        <section class="panel">
+            <div class="row">
+                <h2>Сумка</h2>
+                <button id="add-player-item-button">Добавить предмет</button>
+            </div>
+            <div class="inventory-layout">
+                <div id="player-bag-grid" class="bag-grid"></div>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Название</th>
+                                <th>Клетки</th>
+                                <th>Действия</th>
+                            </tr>
+                        </thead>
+                        <tbody id="player-inventory-list"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+    </section>
+
+    <section id="sheet-view" class="panel hidden">
+        <div class="row">
+            <h2 id="sheet-title">Лист персонажа</h2>
+            <button id="close-sheet-button">Назад</button>
+        </div>
+        <div id="sheet-content"></div>
+    </section>
+
+    <section id="bag-editor-view" class="bag-editor hidden">
+        <div class="row">
+            <h2 id="bag-editor-title">Предмет</h2>
+            <button id="cancel-bag-edit-button">Отмена</button>
+        </div>
+
+        <div class="bag-editor-layout">
+            <section class="panel">
+                <h2>Предмет</h2>
+                <input id="item-name-input" placeholder="Название предмета">
+                <div id="shape-grid" class="shape-grid"></div>
+            </section>
+
+            <section class="panel">
+                <h2>Сумка 4 на 7</h2>
+                <div id="placement-grid" class="bag-grid large"></div>
+            </section>
+        </div>
+
+        <button id="confirm-bag-edit-button" class="confirm-button" disabled>Подтвердить</button>
+    </section>
+</main>
 
 <script src="script.js"></script>
 </body>
