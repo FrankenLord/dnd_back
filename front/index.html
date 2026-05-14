@@ -19,6 +19,7 @@
     <section id="role-screen" class="role-screen">
         <button id="player-role-button">Я игрок</button>
         <button id="master-role-button">Я мастер</button>
+        <button id="camp-role-button">Осмотреть лагерь</button>
     </section>
 
     <section id="master-login" class="panel hidden">
@@ -30,8 +31,22 @@
         <p id="master-login-error" class="error-text"></p>
     </section>
 
+    <section id="player-login" class="panel hidden">
+        <h2>Вход игрока</h2>
+        <div class="grid-form">
+            <input id="player-login-input" placeholder="Логин">
+            <input id="player-password-input" type="password" placeholder="Пароль">
+            <button id="player-login-button">Войти</button>
+        </div>
+        <div class="toolbar">
+            <button id="guest-login-button">Зайти как гость</button>
+        </div>
+        <p id="player-login-error" class="error-text"></p>
+    </section>
+
     <section id="player-setup" class="panel hidden">
         <h2>Выбор персонажа</h2>
+        <p id="player-access-label" class="muted"></p>
         <div class="row">
             <select id="player-character-select"></select>
             <button id="save-player-button">Играть этим персонажем</button>
@@ -40,17 +55,28 @@
         <section class="panel">
             <h2>Создать персонажа</h2>
             <div class="character-form">
-                <input id="new-character-name" placeholder="Имя">
-                <input id="new-character-class" placeholder="Класс">
-                <input id="new-character-hp" type="number" min="1" placeholder="HP">
-                <input id="new-character-str" type="number" placeholder="STR">
-                <input id="new-character-dex" type="number" placeholder="DEX">
-                <input id="new-character-con" type="number" placeholder="CON">
-                <input id="new-character-int" type="number" placeholder="INT">
-                <input id="new-character-wis" type="number" placeholder="WIS">
-                <input id="new-character-luc" type="number" placeholder="LUC">
+                <input id="new-character-name" placeholder="Имя" required>
+                <select id="new-character-class" required>
+                    <option value="">Класс</option>
+                    <option>Воин</option>
+                    <option>Маг</option>
+                    <option>Жрец</option>
+                    <option>Вор</option>
+                    <option>Дварф</option>
+                    <option>Эльф</option>
+                    <option>Полурослик</option>
+                    <option>Никакой</option>
+                </select>
+                <input id="new-character-hp" type="number" min="1" placeholder="HP" required>
+                <input id="new-character-str" type="number" min="3" max="18" placeholder="STR" required>
+                <input id="new-character-dex" type="number" min="3" max="18" placeholder="DEX" required>
+                <input id="new-character-con" type="number" min="3" max="18" placeholder="CON" required>
+                <input id="new-character-int" type="number" min="3" max="18" placeholder="INT" required>
+                <input id="new-character-wis" type="number" min="3" max="18" placeholder="WIS" required>
+                <input id="new-character-luc" type="number" min="3" max="18" placeholder="LUC" required>
                 <button id="create-character-button">Создать и выбрать</button>
             </div>
+            <p id="create-character-error" class="error-text"></p>
         </section>
     </section>
 
@@ -85,10 +111,22 @@
         </section>
 
         <section class="panel">
-            <h2>Лист персонажа игрока</h2>
+            <h2>Профили игроков</h2>
+            <div class="grid-form">
+                <input id="profile-login-input" placeholder="Логин">
+                <input id="profile-password-input" type="password" placeholder="Пароль">
+                <button id="create-profile-button">Создать профиль</button>
+            </div>
+            <p id="profile-error" class="error-text"></p>
+            <div id="player-profile-list" class="profile-list"></div>
+        </section>
+
+        <section class="panel">
+            <h2>Изменить персонажа игрока</h2>
             <div class="row">
                 <select id="master-sheet-select"></select>
                 <button id="open-master-sheet-button">Открыть лист</button>
+                <button id="delete-master-character-button" class="danger-button">Удалить персонажа</button>
             </div>
         </section>
     </section>
@@ -101,14 +139,15 @@
         <section class="panel">
             <div class="row">
                 <h2 id="player-name">Персонаж</h2>
-                <button id="open-player-sheet-button">Лист персонажа</button>
+                <button id="change-player-character-button">Сменить персонажа</button>
+                <button id="open-player-sheet-button">Изменить персонажа</button>
             </div>
             <div id="player-summary"></div>
         </section>
 
         <section class="panel">
             <div class="row">
-                <h2>Сумка</h2>
+                <h2>Сумка <span id="player-load-status" class="load-status"></span></h2>
                 <button id="add-player-item-button">Добавить предмет</button>
             </div>
             <div class="inventory-layout">
@@ -127,14 +166,34 @@
                 </div>
             </div>
         </section>
+
+        <section class="panel">
+            <h2>Заметки</h2>
+            <textarea id="player-notes" class="notes-field" placeholder="Заметки персонажа"></textarea>
+        </section>
     </section>
 
     <section id="sheet-view" class="panel hidden">
         <div class="row">
-            <h2 id="sheet-title">Лист персонажа</h2>
+            <h2 id="sheet-title">Изменить персонажа</h2>
             <button id="close-sheet-button">Назад</button>
         </div>
         <div id="sheet-content"></div>
+    </section>
+
+    <section id="camp-view" class="panel hidden">
+        <div class="row">
+            <h2>Лагерь</h2>
+            <button id="back-from-camp-button">Назад</button>
+        </div>
+
+        <section class="panel">
+            <div class="row">
+                <h2>Строения</h2>
+                <button id="add-camp-building-button">Добавить строение</button>
+            </div>
+            <div id="camp-list" class="camp-list"></div>
+        </section>
     </section>
 
     <section id="bag-editor-view" class="bag-editor hidden">

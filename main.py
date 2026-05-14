@@ -1,6 +1,8 @@
 from pathlib import Path
+import hashlib
 import json
 import random
+import secrets
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,12 +12,14 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from database import SessionLocal, engine
-from models import Base, character, initiative, inventory_item, monster
+from models import Base, camp_building, character, initiative, inventory_item, monster, player_profile
 
 
 MASTER_PASSWORD = "Em4758@Pro"
 BAG_ROWS = 4
 BAG_COLS = 7
+ALLOWED_CLASSES = {"Воин", "Маг", "Жрец", "Вор", "Дварф", "Эльф", "Полурослик", "Никакой"}
+XP_THRESHOLDS = [0, 10, 50, 110, 190, 290, 410, 550, 710, 890, 1090]
 
 
 def roll_d20():
@@ -55,6 +59,33 @@ def ensure_schema():
         conn.execute(
             text("ALTER TABLE initiative ADD COLUMN IF NOT EXISTS monster_id INTEGER")
         )
+        conn.execute(
+            text("ALTER TABLE characters ADD COLUMN IF NOT EXISTS reflex_save INTEGER DEFAULT 0")
+        )
+        conn.execute(
+            text("ALTER TABLE characters ADD COLUMN IF NOT EXISTS fortitude_save INTEGER DEFAULT 0")
+        )
+        conn.execute(
+            text("ALTER TABLE characters ADD COLUMN IF NOT EXISTS will_save INTEGER DEFAULT 0")
+        )
+        conn.execute(
+            text("ALTER TABLE characters ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT ''")
+        )
+        conn.execute(
+            text("ALTER TABLE characters ADD COLUMN IF NOT EXISTS base_speed INTEGER DEFAULT 30")
+        )
+        conn.execute(
+            text("ALTER TABLE characters ADD COLUMN IF NOT EXISTS xp INTEGER DEFAULT 0")
+        )
+        conn.execute(
+            text("ALTER TABLE characters ADD COLUMN IF NOT EXISTS owner_profile_id INTEGER")
+        )
+        conn.execute(text("UPDATE characters SET reflex_save = 0 WHERE reflex_save IS NULL"))
+        conn.execute(text("UPDATE characters SET fortitude_save = 0 WHERE fortitude_save IS NULL"))
+        conn.execute(text("UPDATE characters SET will_save = 0 WHERE will_save IS NULL"))
+        conn.execute(text("UPDATE characters SET notes = '' WHERE notes IS NULL"))
+        conn.execute(text("UPDATE characters SET base_speed = 30 WHERE base_speed IS NULL"))
+        conn.execute(text("UPDATE characters SET xp = 0 WHERE xp IS NULL"))
 
 
 ensure_schema()
@@ -72,6 +103,7 @@ app.add_middleware(
 class CharacterCreate(BaseModel):
     name: str
     clas: str
+    owner_profile_id: int | None = None
     max_hp: int
     STR: int
     DEX: int
@@ -85,6 +117,22 @@ class HPUpdate(BaseModel):
     current_hp: int
 
 
+class CharacterDetailsUpdate(BaseModel):
+    clas: str | None = None
+    owner_profile_id: int | None = None
+    max_hp: int | None = None
+    STR: int | None = None
+    DEX: int | None = None
+    CON: int | None = None
+    INT: int | None = None
+    WIS: int | None = None
+    LUC: int | None = None
+
+
+class XPAdd(BaseModel):
+    amount: int
+
+
 class StatsUpdate(BaseModel):
     current_STR: int | None = None
     current_DEX: int | None = None
@@ -94,11 +142,23 @@ class StatsUpdate(BaseModel):
     current_LUC: int | None = None
 
 
+class SavesUpdate(BaseModel):
+    reflex_save: int | None = None
+    fortitude_save: int | None = None
+    will_save: int | None = None
+
+
+class NotesUpdate(BaseModel):
+    notes: str
+
+
 class CharacterResponse(BaseModel):
     id: int
+    owner_profile_id: int | None = None
     name: str
     clas: str
     level: int
+    xp: int
     current_hp: int
     max_hp: int
     STR: int
@@ -113,6 +173,46 @@ class CharacterResponse(BaseModel):
     current_INT: int
     current_WIS: int
     current_LUC: int
+    reflex_save: int
+    fortitude_save: int
+    will_save: int
+    notes: str
+    base_speed: int
+
+
+class CampBuildingInput(BaseModel):
+    name: str = "Новое строение"
+    notes: str = ""
+
+
+class CampBuildingUpdate(BaseModel):
+    name: str | None = None
+    notes: str | None = None
+
+
+class CampBuildingResponse(BaseModel):
+    id: int
+    name: str
+    notes: str
+
+
+class PlayerProfileInput(BaseModel):
+    login: str
+    password: str
+
+
+class PlayerProfileUpdate(BaseModel):
+    login: str | None = None
+    password: str | None = None
+
+
+class PlayerProfileResponse(BaseModel):
+    id: int
+    login: str
+
+
+class PlayerAuthResponse(BaseModel):
+    profile: PlayerProfileResponse
 
 
 class InitiativeInput(BaseModel):
@@ -173,6 +273,69 @@ def get_db():
 
 def clamp(value: int, minimum: int, maximum: int) -> int:
     return max(minimum, min(value, maximum))
+
+
+def hash_password(password: str, salt: str) -> str:
+    return hashlib.sha256(f"{salt}:{password}".encode("utf-8")).hexdigest()
+
+
+def make_password_pair(password: str) -> tuple[str, str]:
+    salt = secrets.token_hex(16)
+    return hash_password(password, salt), salt
+
+
+def validate_profile_credentials(login: str, password: str):
+    if not login.strip():
+        raise HTTPException(status_code=400, detail="Player login is required")
+
+    if len(password) < 1:
+        raise HTTPException(status_code=400, detail="Player password is required")
+
+
+def profile_login_exists(login: str, db: Session, ignored_profile_id: int | None = None) -> bool:
+    query = db.query(player_profile).filter(player_profile.login == login.strip())
+    if ignored_profile_id is not None:
+        query = query.filter(player_profile.id != ignored_profile_id)
+    return query.first() is not None
+
+
+def require_player_profile(profile_id: int, db: Session):
+    profile = db.query(player_profile).filter(player_profile.id == profile_id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Player profile not found")
+    return profile
+
+
+def level_for_xp(xp: int) -> int:
+    level = 0
+    for index, threshold in enumerate(XP_THRESHOLDS):
+        if xp >= threshold:
+            level = index
+    return min(level, 10)
+
+
+def sync_character_level(char: character):
+    char.level = level_for_xp(char.xp or 0)
+
+
+def validate_character_create(data: CharacterCreate):
+    if not data.name.strip():
+        raise HTTPException(status_code=400, detail="Character name is required")
+
+    if data.clas.strip() not in ALLOWED_CLASSES:
+        raise HTTPException(status_code=400, detail="Character class is not allowed")
+
+    if data.max_hp < 1:
+        raise HTTPException(status_code=400, detail="Character HP cannot be below 1")
+
+    stat_names = ["STR", "DEX", "CON", "INT", "WIS", "LUC"]
+    for stat in stat_names:
+        value = getattr(data, stat)
+        if value < 3 or value > 18:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{stat} must be between 3 and 18",
+            )
 
 
 def normalize_turn_index(total_entries: int):
@@ -279,11 +442,92 @@ def auth_master(data: PasswordInput):
     return {"ok": True}
 
 
+@app.post("/auth/player", response_model=PlayerAuthResponse)
+def auth_player(data: PlayerProfileInput, db: Session = Depends(get_db)):
+    profile = db.query(player_profile).filter(player_profile.login == data.login.strip()).first()
+    if not profile:
+        raise HTTPException(status_code=401, detail="Wrong player login or password")
+
+    if hash_password(data.password, profile.password_salt) != profile.password_hash:
+        raise HTTPException(status_code=401, detail="Wrong player login or password")
+
+    return {"profile": profile}
+
+
+@app.get("/player-profiles", response_model=list[PlayerProfileResponse])
+def get_player_profiles(db: Session = Depends(get_db)):
+    return db.query(player_profile).order_by(player_profile.login).all()
+
+
+@app.post("/player-profiles", response_model=PlayerProfileResponse)
+def create_player_profile(data: PlayerProfileInput, db: Session = Depends(get_db)):
+    validate_profile_credentials(data.login, data.password)
+    login = data.login.strip()
+
+    if profile_login_exists(login, db):
+        raise HTTPException(status_code=400, detail="Player login already exists")
+
+    password_hash, password_salt = make_password_pair(data.password)
+    profile = player_profile(
+        login=login,
+        password_hash=password_hash,
+        password_salt=password_salt,
+    )
+    db.add(profile)
+    db.commit()
+    db.refresh(profile)
+    return profile
+
+
+@app.patch("/player-profiles/{profile_id}", response_model=PlayerProfileResponse)
+def update_player_profile(
+    profile_id: int,
+    data: PlayerProfileUpdate,
+    db: Session = Depends(get_db),
+):
+    profile = require_player_profile(profile_id, db)
+
+    if data.login is not None:
+        login = data.login.strip()
+        if not login:
+            raise HTTPException(status_code=400, detail="Player login is required")
+        if profile_login_exists(login, db, ignored_profile_id=profile.id):
+            raise HTTPException(status_code=400, detail="Player login already exists")
+        profile.login = login
+
+    if data.password is not None:
+        if len(data.password) < 1:
+            raise HTTPException(status_code=400, detail="Player password is required")
+        profile.password_hash, profile.password_salt = make_password_pair(data.password)
+
+    db.commit()
+    db.refresh(profile)
+    return profile
+
+
+@app.delete("/player-profiles/{profile_id}")
+def delete_player_profile(profile_id: int, db: Session = Depends(get_db)):
+    profile = require_player_profile(profile_id, db)
+    db.query(character).filter(character.owner_profile_id == profile.id).update(
+        {"owner_profile_id": None}
+    )
+    db.delete(profile)
+    db.commit()
+    return {"message": "Player profile deleted"}
+
+
 @app.post("/characters/", response_model=CharacterResponse)
 def create_character(data: CharacterCreate, db: Session = Depends(get_db)):
+    validate_character_create(data)
+    if data.owner_profile_id is not None:
+        require_player_profile(data.owner_profile_id, db)
+
     new_character = character(
-        name=data.name,
-        clas=data.clas,
+        owner_profile_id=data.owner_profile_id,
+        name=data.name.strip(),
+        clas=data.clas.strip(),
+        level=0,
+        xp=0,
         max_hp=data.max_hp,
         current_hp=data.max_hp,
         STR=data.STR,
@@ -298,6 +542,11 @@ def create_character(data: CharacterCreate, db: Session = Depends(get_db)):
         current_INT=data.INT,
         current_WIS=data.WIS,
         current_LUC=data.LUC,
+        reflex_save=0,
+        fortitude_save=0,
+        will_save=0,
+        notes="",
+        base_speed=30,
     )
     db.add(new_character)
     db.commit()
@@ -307,7 +556,16 @@ def create_character(data: CharacterCreate, db: Session = Depends(get_db)):
 
 @app.get("/characters", response_model=list[CharacterResponse])
 def get_characters(db: Session = Depends(get_db)):
-    return db.query(character).order_by(character.name).all()
+    chars = db.query(character).order_by(character.name).all()
+    changed = False
+    for char in chars:
+        next_level = level_for_xp(char.xp or 0)
+        if char.level != next_level:
+            char.level = next_level
+            changed = True
+    if changed:
+        db.commit()
+    return chars
 
 
 @app.patch("/characters/{character_id}/hp")
@@ -317,6 +575,60 @@ def update_hp(character_id: int, data: HPUpdate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(char)
     return {"message": "HP updated", "hp": char.current_hp}
+
+
+@app.patch("/characters/{character_id}/details", response_model=CharacterResponse)
+def update_character_details(
+    character_id: int,
+    data: CharacterDetailsUpdate,
+    db: Session = Depends(get_db),
+):
+    char = require_character(character_id, db)
+
+    if data.clas is not None:
+        next_class = data.clas.strip()
+        if next_class not in ALLOWED_CLASSES:
+            raise HTTPException(status_code=400, detail="Character class is not allowed")
+        char.clas = next_class
+
+    if "owner_profile_id" in data.model_fields_set:
+        if data.owner_profile_id is not None:
+            require_player_profile(data.owner_profile_id, db)
+        char.owner_profile_id = data.owner_profile_id
+
+    if data.max_hp is not None:
+        if data.max_hp < 1:
+            raise HTTPException(status_code=400, detail="Character HP cannot be below 1")
+        char.max_hp = data.max_hp
+        char.current_hp = clamp(char.current_hp, 0, char.max_hp)
+
+    for stat in ["STR", "DEX", "CON", "INT", "WIS", "LUC"]:
+        value = getattr(data, stat)
+        if value is None:
+            continue
+        if value < 0:
+            raise HTTPException(status_code=400, detail=f"{stat} cannot be below 0")
+        setattr(char, stat, value)
+        current_field = f"current_{stat}"
+        setattr(char, current_field, clamp(getattr(char, current_field), 0, value))
+
+    db.commit()
+    db.refresh(char)
+    return char
+
+
+@app.post("/characters/{character_id}/xp", response_model=CharacterResponse)
+def add_character_xp(character_id: int, data: XPAdd, db: Session = Depends(get_db)):
+    char = require_character(character_id, db)
+
+    if data.amount <= 0:
+        raise HTTPException(status_code=400, detail="XP amount must be positive")
+
+    char.xp = max(0, (char.xp or 0) + data.amount)
+    sync_character_level(char)
+    db.commit()
+    db.refresh(char)
+    return char
 
 
 @app.patch("/characters/{character_id}/stats", response_model=CharacterResponse)
@@ -331,6 +643,29 @@ def update_stats(character_id: int, data: StatsUpdate, db: Session = Depends(get
             maximum = getattr(char, stat)
             setattr(char, field_name, clamp(value, 0, maximum))
 
+    db.commit()
+    db.refresh(char)
+    return char
+
+
+@app.patch("/characters/{character_id}/saves", response_model=CharacterResponse)
+def update_saves(character_id: int, data: SavesUpdate, db: Session = Depends(get_db)):
+    char = require_character(character_id, db)
+
+    for field_name in ["reflex_save", "fortitude_save", "will_save"]:
+        value = getattr(data, field_name)
+        if value is not None:
+            setattr(char, field_name, value)
+
+    db.commit()
+    db.refresh(char)
+    return char
+
+
+@app.patch("/characters/{character_id}/notes", response_model=CharacterResponse)
+def update_notes(character_id: int, data: NotesUpdate, db: Session = Depends(get_db)):
+    char = require_character(character_id, db)
+    char.notes = data.notes
     db.commit()
     db.refresh(char)
     return char
@@ -567,6 +902,25 @@ def update_initiative(
     return {"message": "Initiative updated", "initiative": entry.initiative}
 
 
+@app.delete("/initiative/{entry_id}")
+def delete_initiative_entry(entry_id: int, db: Session = Depends(get_db)):
+    entry = db.query(initiative).filter(initiative.id == entry_id).first()
+    if not entry:
+        raise HTTPException(status_code=404, detail="Initiative entry not found")
+
+    monster_id = entry.monster_id
+    db.delete(entry)
+
+    if monster_id:
+        mon = db.query(monster).filter(monster.id == monster_id).first()
+        if mon:
+            db.delete(mon)
+
+    db.commit()
+    normalize_turn_index(db.query(initiative).count())
+    return {"message": "Initiative entry deleted"}
+
+
 @app.patch("/monsters/{monster_id}/hp")
 def update_monster_hp(monster_id: int, data: HPUpdate, db: Session = Depends(get_db)):
     mon = db.query(monster).filter(monster.id == monster_id).first()
@@ -604,6 +958,53 @@ def clear_initiative(db: Session = Depends(get_db)):
     db.commit()
     app.state.current_turn_index = 0
     return {"message": "Initiative cleared"}
+
+
+@app.get("/camp/buildings", response_model=list[CampBuildingResponse])
+def get_camp_buildings(db: Session = Depends(get_db)):
+    return db.query(camp_building).order_by(camp_building.id).all()
+
+
+@app.post("/camp/buildings", response_model=CampBuildingResponse)
+def create_camp_building(data: CampBuildingInput, db: Session = Depends(get_db)):
+    name = data.name.strip() or "Новое строение"
+    building = camp_building(name=name, notes=data.notes)
+    db.add(building)
+    db.commit()
+    db.refresh(building)
+    return building
+
+
+@app.patch("/camp/buildings/{building_id}", response_model=CampBuildingResponse)
+def update_camp_building(
+    building_id: int,
+    data: CampBuildingUpdate,
+    db: Session = Depends(get_db),
+):
+    building = db.query(camp_building).filter(camp_building.id == building_id).first()
+    if not building:
+        raise HTTPException(status_code=404, detail="Building not found")
+
+    if data.name is not None:
+        building.name = data.name.strip() or "Новое строение"
+
+    if data.notes is not None:
+        building.notes = data.notes
+
+    db.commit()
+    db.refresh(building)
+    return building
+
+
+@app.delete("/camp/buildings/{building_id}")
+def delete_camp_building(building_id: int, db: Session = Depends(get_db)):
+    building = db.query(camp_building).filter(camp_building.id == building_id).first()
+    if not building:
+        raise HTTPException(status_code=404, detail="Building not found")
+
+    db.delete(building)
+    db.commit()
+    return {"message": "Building deleted"}
 
 
 front_dir = Path(__file__).parent / "front"

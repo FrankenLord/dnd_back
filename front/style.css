@@ -11,7 +11,8 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
     border: 1px solid #35f06a;
     background: #061506;
     color: #35f06a;
@@ -36,8 +37,15 @@ button:hover:not(:disabled) {
 }
 
 input,
-select {
+select,
+textarea {
     width: 100%;
+}
+
+textarea {
+    min-height: 140px;
+    overflow: hidden;
+    resize: none;
 }
 
 table {
@@ -109,7 +117,7 @@ h3 {
 .role-screen {
     display: grid;
     gap: 12px;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     min-height: 45vh;
     place-items: center;
 }
@@ -166,10 +174,66 @@ h3 {
 
 .entry-actions,
 .stat-editor,
+.class-editor,
 .table-actions {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
+}
+
+.danger-button {
+    border-color: #ff5c5c;
+    color: #ff8a8a;
+}
+
+.danger-button:hover:not(:disabled) {
+    background: #ff5c5c;
+    color: #170606;
+}
+
+.muted {
+    color: rgba(53, 240, 106, 0.72);
+}
+
+.character-subtitle {
+    color: #f0d35a;
+    font-size: 18px;
+    font-weight: bold;
+    margin-top: 8px;
+}
+
+.xp-block {
+    display: grid;
+    gap: 8px;
+    margin: 12px 0;
+}
+
+.xp-meta {
+    align-items: center;
+    display: flex;
+    font-size: 14px;
+    justify-content: space-between;
+}
+
+.xp-track {
+    border: 1px solid #35f06a;
+    height: 18px;
+    overflow: hidden;
+}
+
+.xp-fill {
+    background: #f0d35a;
+    height: 100%;
+    transition: width 0.2s ease;
+}
+
+.class-editor {
+    align-items: center;
+}
+
+.class-editor select {
+    min-width: 180px;
+    width: auto;
 }
 
 .turn-status {
@@ -192,6 +256,17 @@ h3 {
 .hp-line {
     font-size: 22px;
     margin: 12px 0;
+}
+
+.load-status {
+    color: #f0d35a;
+    font-size: 14px;
+    font-weight: normal;
+}
+
+.notes-field {
+    display: block;
+    margin-top: 12px;
 }
 
 .stats-grid,
@@ -276,6 +351,51 @@ h3 {
     width: 100%;
 }
 
+.camp-list {
+    display: grid;
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.camp-building {
+    border: 1px solid rgba(53, 240, 106, 0.55);
+    padding: 10px;
+}
+
+.camp-building summary {
+    align-items: center;
+    cursor: pointer;
+    display: flex;
+    gap: 10px;
+    justify-content: space-between;
+}
+
+.camp-building textarea {
+    margin-top: 10px;
+    min-height: 42px;
+}
+
+.camp-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.profile-list {
+    display: grid;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.profile-row {
+    align-items: center;
+    border: 1px solid rgba(53, 240, 106, 0.55);
+    display: flex;
+    gap: 10px;
+    justify-content: space-between;
+    padding: 8px;
+}
+
 @media (max-width: 860px) {
     .terminal {
         margin: 0;
@@ -284,7 +404,8 @@ h3 {
 
     .header,
     .row,
-    .entry {
+    .entry,
+    .profile-row {
         align-items: stretch;
         flex-direction: column;
     }
