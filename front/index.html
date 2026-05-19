@@ -13,7 +13,10 @@
             <h1>DCC Initiative</h1>
             <p>Local Server: <span id="status">ONLINE</span></p>
         </div>
-        <button id="change-role-button" class="ghost-button">Сменить роль</button>
+        <div class="header-actions">
+            <button id="header-camp-button" class="ghost-button">Лагерь</button>
+            <button id="change-role-button" class="ghost-button">Сменить роль</button>
+        </div>
     </header>
 
     <section id="role-screen" class="role-screen">
@@ -68,12 +71,12 @@
                     <option>Никакой</option>
                 </select>
                 <input id="new-character-hp" type="number" min="1" placeholder="HP" required>
-                <input id="new-character-str" type="number" min="3" max="18" placeholder="STR" required>
-                <input id="new-character-dex" type="number" min="3" max="18" placeholder="DEX" required>
-                <input id="new-character-con" type="number" min="3" max="18" placeholder="CON" required>
-                <input id="new-character-int" type="number" min="3" max="18" placeholder="INT" required>
-                <input id="new-character-wis" type="number" min="3" max="18" placeholder="WIS" required>
-                <input id="new-character-luc" type="number" min="3" max="18" placeholder="LUC" required>
+                <input id="new-character-str" type="number" min="3" max="18" placeholder="СИЛ" required>
+                <input id="new-character-dex" type="number" min="3" max="18" placeholder="ЛВК" required>
+                <input id="new-character-con" type="number" min="3" max="18" placeholder="ТЕЛ" required>
+                <input id="new-character-int" type="number" min="3" max="18" placeholder="ИНТ" required>
+                <input id="new-character-wis" type="number" min="3" max="18" placeholder="ЛИЧ" required>
+                <input id="new-character-luc" type="number" min="3" max="18" placeholder="УДЧ" required>
                 <button id="create-character-button">Создать и выбрать</button>
             </div>
             <p id="create-character-error" class="error-text"></p>
@@ -81,10 +84,6 @@
     </section>
 
     <section id="master-view" class="hidden">
-        <div class="toolbar">
-            <button id="next-turn-button">Следующий ход</button>
-            <button id="clear-button">Очистить инициативу</button>
-        </div>
 
         <section class="panel">
             <h2>Добавить персонажа</h2>
@@ -109,6 +108,10 @@
             <h2>Initiative Order</h2>
             <div id="initiative-list"></div>
         </section>
+        <div class="toolbar">
+            <button id="next-turn-button">Следующий ход</button>
+            <button id="clear-button">Очистить инициативу</button>
+        </div>
 
         <section class="panel">
             <h2>Профили игроков</h2>
@@ -131,21 +134,24 @@
         </section>
     </section>
 
-    <section id="player-view" class="hidden">
-        <section class="turn-card">
-            <div id="turn-status" class="turn-status">СЕЙЧАС НЕ ТВОЙ ХОД</div>
+    <section id="player-view" class="player-view hidden">
+        <section class="player-hero">
+            <div>
+                <h2 id="player-name">Персонаж</h2>
+                <div id="turn-status" class="turn-status">СЕЙЧАС НЕ ТВОЙ ХОД</div>
+            </div>
+            <div class="player-actions">
+                <button id="player-end-turn-button" class="primary-button">Передать ход</button>
+                <button id="open-player-sheet-button">Лист</button>
+                <button id="change-player-character-button">Сменить</button>
+            </div>
         </section>
 
-        <section class="panel">
-            <div class="row">
-                <h2 id="player-name">Персонаж</h2>
-                <button id="change-player-character-button">Сменить персонажа</button>
-                <button id="open-player-sheet-button">Изменить персонажа</button>
-            </div>
+        <section class="player-panel">
             <div id="player-summary"></div>
         </section>
 
-        <section class="panel">
+        <section class="player-panel">
             <div class="row">
                 <h2>Сумка <span id="player-load-status" class="load-status"></span></h2>
                 <button id="add-player-item-button">Добавить предмет</button>
@@ -167,7 +173,7 @@
             </div>
         </section>
 
-        <section class="panel">
+        <section class="player-panel">
             <h2>Заметки</h2>
             <textarea id="player-notes" class="notes-field" placeholder="Заметки персонажа"></textarea>
         </section>
@@ -176,6 +182,7 @@
     <section id="sheet-view" class="panel hidden">
         <div class="row">
             <h2 id="sheet-title">Изменить персонажа</h2>
+            <button id="sheet-camp-button">Лагерь</button>
             <button id="close-sheet-button">Назад</button>
         </div>
         <div id="sheet-content"></div>

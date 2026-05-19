@@ -31,10 +31,12 @@ let activeSheetCharacterId = null;
 let bagEditor = null;
 let notesSaveTimer = null;
 let campBuildings = [];
+let campReturnView = null;
 const campSaveTimers = new Map();
 
 const elements = {
     status: document.getElementById("status"),
+    headerCampButton: document.getElementById("header-camp-button"),
     roleScreen: document.getElementById("role-screen"),
     masterLogin: document.getElementById("master-login"),
     masterLoginError: document.getElementById("master-login-error"),
@@ -57,6 +59,7 @@ const elements = {
     playerNotes: document.getElementById("player-notes"),
     playerBagGrid: document.getElementById("player-bag-grid"),
     playerInventoryList: document.getElementById("player-inventory-list"),
+    playerEndTurnButton: document.getElementById("player-end-turn-button"),
     turnStatus: document.getElementById("turn-status"),
     sheetTitle: document.getElementById("sheet-title"),
     sheetContent: document.getElementById("sheet-content"),
@@ -87,12 +90,13 @@ function abilityModifier(value) {
 }
 
 function formatModifier(value) {
-    const modifier = abilityModifier(Number(value));
+    const modifier = abilityModifier(Number(value ?? 0));
     return modifier > 0 ? `+${modifier}` : String(modifier);
 }
 
 function formatSigned(value) {
-    return value > 0 ? `+${value}` : String(value);
+    const number = Number(value ?? 0);
+    return number > 0 ? `+${number}` : String(number);
 }
 
 function loadCapacity(character) {
@@ -217,6 +221,22 @@ function showOnly(viewName) {
 
     views.forEach((view) => view.classList.add("hidden"));
     elements[viewName].classList.remove("hidden");
+}
+
+function currentVisibleViewName() {
+    const viewNames = [
+        "roleScreen",
+        "masterLogin",
+        "playerLogin",
+        "playerSetup",
+        "masterView",
+        "playerView",
+        "sheetView",
+        "campView",
+        "bagEditorView",
+    ];
+
+    return viewNames.find((viewName) => !elements[viewName].classList.contains("hidden")) || null;
 }
 
 async function api(path, options = {}) {
@@ -409,22 +429,42 @@ async function renderPlayerView() {
         elements.turnStatus.textContent = "СЕЙЧАС НЕ ТВОЙ ХОД";
         elements.turnStatus.className = "turn-status";
     }
+    elements.playerEndTurnButton.disabled = !initiativeEntry?.is_current;
 
     const items = await loadInventory(character.id);
     elements.playerSummary.innerHTML = `
-        <div class="character-subtitle">${character.clas} ${character.level} уровня</div>
-        ${renderXPBlock(character, "player")}
-        <div class="hp-line">HP: ${character.current_hp}/${character.max_hp}</div>
-        <div>Базовая скорость: ${character.base_speed || 30}</div>
-        <div class="stats-grid">
-            ${STATS.map((stat) => `
-                <div>${STAT_LABELS[stat]}: ${character[`current_${stat}`]}/${character[stat]} (${formatModifier(character[`current_${stat}`])})</div>
-            `).join("")}
-        </div>
-        <div class="stats-grid">
-            ${SAVES.map((save) => `
-                <div>${save.label}: ${formatSigned(character[save.field])}</div>
-            `).join("")}
+        <div class="player-summary-grid">
+            <section class="summary-card summary-main">
+                <div class="character-subtitle">${character.clas} ${character.level} уровня</div>
+                <div class="hp-line">HP: ${character.current_hp}/${character.max_hp}</div>
+                <div class="summary-muted">Скорость ${character.base_speed || 30}</div>
+            </section>
+            <section class="summary-card">
+                ${renderXPBlock(character, "player")}
+            </section>
+            <section class="summary-card">
+                <h3>Характеристики</h3>
+                <div class="compact-stat-grid">
+                    ${STATS.map((stat) => `
+                        <div>
+                            <span>${STAT_LABELS[stat]}</span>
+                            <strong>${character[`current_${stat}`]}/${character[stat]}</strong>
+                            <em>${formatModifier(character[`current_${stat}`])}</em>
+                        </div>
+                    `).join("")}
+                </div>
+            </section>
+            <section class="summary-card">
+                <h3>Спасброски</h3>
+                <div class="save-grid">
+                    ${SAVES.map((save) => `
+                        <div>
+                            <span>${save.label}</span>
+                            <strong>${formatSigned(character[save.field])}</strong>
+                        </div>
+                    `).join("")}
+                </div>
+            </section>
         </div>
     `;
     elements.playerLoadStatus.textContent = renderLoadStatus(character, items);
@@ -912,9 +952,31 @@ async function loadCampBuildings() {
     renderCampBuildings();
 }
 
-async function openCamp() {
+async function openCamp(returnView = null) {
+    const visibleView = currentVisibleViewName();
+    campReturnView = returnView || (visibleView === "campView" ? campReturnView : visibleView);
     await loadCampBuildings();
     showOnly("campView");
+}
+
+async function closeCamp() {
+    const returnView = campReturnView;
+    campReturnView = null;
+
+    if (returnView === "sheetView" && activeSheetCharacterId) {
+        await openSheet(activeSheetCharacterId);
+        return;
+    }
+
+    if (returnView && elements[returnView]) {
+        showOnly(returnView);
+        if (returnView === "playerView") {
+            await renderPlayerView();
+        }
+        return;
+    }
+
+    renderCurrentRole();
 }
 
 function renderCampBuildings() {
@@ -993,9 +1055,9 @@ function renderInventory(grid, tbody, characterId, items) {
         const row = document.createElement("tr");
         row.innerHTML = `
             <td>${item.name}</td>
-            <td>${item.cell_count}</td>
+            <td>${item.cell_count || "—"}</td>
             <td class="table-actions">
-                <button data-inventory-action="position" data-character-id="${characterId}" data-item-id="${item.id}">Положение</button>
+                <button data-inventory-action="position" data-character-id="${characterId}" data-item-id="${item.id}" ${item.cell_count ? "" : "disabled"}>Положение</button>
                 <button data-inventory-action="edit" data-character-id="${characterId}" data-item-id="${item.id}">Предмет</button>
                 <button data-inventory-action="delete" data-character-id="${characterId}" data-item-id="${item.id}">Удалить</button>
             </td>
@@ -1039,7 +1101,7 @@ function renderBagGrid(grid, items, preview = null) {
     }
 }
 
-function openBagEditor(characterId, item = null, mode = "create") {
+async function openBagEditor(characterId, item = null, mode = "create") {
     bagEditor = {
         characterId: Number(characterId),
         item,
@@ -1054,7 +1116,8 @@ function openBagEditor(characterId, item = null, mode = "create") {
     elements.itemNameInput.value = item?.name || "";
     elements.itemNameInput.disabled = mode === "position";
 
-    renderBagEditor();
+    await renderBagEditor();
+    quickUpdateConfirmState();
     showOnly("bagEditorView");
 }
 
@@ -1132,24 +1195,62 @@ function shapeFits(shape, x, y, items) {
 
 function updateConfirmState(items) {
     const name = elements.itemNameInput.value.trim();
-    const hasName = bagEditor.mode === "position" || name.length > 0;
-    const hasPosition = bagEditor.position !== null;
     const normalizedShape = normalizeClientShape(bagEditor.shape);
+    const hasShape = normalizedShape.length > 0;
+
+    if (name.length === 0) {
+        elements.confirmBagEditButton.disabled = true;
+        return;
+    }
+
+    if (!hasShape) {
+        elements.confirmBagEditButton.disabled = false;
+        return;
+    }
+
+    const hasPosition = bagEditor.position !== null;
     const fits = hasPosition
         ? shapeFits(normalizedShape, bagEditor.position.x, bagEditor.position.y, items)
         : false;
 
-    elements.confirmBagEditButton.disabled = !(hasName && fits);
+    elements.confirmBagEditButton.disabled = !(hasPosition && fits);
+}
+
+function quickUpdateConfirmState() {
+    const name = elements.itemNameInput.value.trim();
+    const normalizedShape = normalizeClientShape(bagEditor.shape);
+    const hasShape = normalizedShape.length > 0;
+
+    if (name.length === 0) {
+        elements.confirmBagEditButton.disabled = true;
+        return;
+    }
+
+    if (!hasShape) {
+        elements.confirmBagEditButton.disabled = false;
+    }
 }
 
 async function confirmBagEdit() {
-    if (!bagEditor || !bagEditor.position) return;
+    if (!bagEditor) return;
+
+    const name = elements.itemNameInput.value.trim();
+    if (!name) return;  // Имя обязательно всегда
+
+    const normalizedShape = normalizeClientShape(bagEditor.shape);
+    const hasShape = normalizedShape.length > 0;
+    
+    // Если есть форма, но нет позиции — показываем предупреждение
+    if (hasShape && !bagEditor.position) {
+        alert("Выберите позицию для предмета в сумке");
+        return;
+    }
 
     const body = {
-        name: elements.itemNameInput.value.trim(),
-        shape: normalizeClientShape(bagEditor.shape),
-        x: bagEditor.position.x,
-        y: bagEditor.position.y,
+        name: name,
+        shape: normalizedShape,
+        x: bagEditor.position?.x ?? 0,
+        y: bagEditor.position?.y ?? 0,
     };
 
     if (bagEditor.mode === "position") {
@@ -1192,7 +1293,7 @@ async function handleInventoryAction(button) {
     const action = button.dataset.inventoryAction;
 
     if (action === "add") {
-        openBagEditor(characterId);
+        await openBagEditor(characterId);
         return;
     }
 
@@ -1202,11 +1303,11 @@ async function handleInventoryAction(button) {
     if (!item) return;
 
     if (action === "position") {
-        openBagEditor(characterId, item, "position");
+        await openBagEditor(characterId, item, "position");
     }
 
     if (action === "edit") {
-        openBagEditor(characterId, item, "edit");
+        await openBagEditor(characterId, item, "edit");
     }
 
     if (action === "delete") {
@@ -1224,6 +1325,8 @@ elements.roleScreen.addEventListener("click", (event) => {
     if (event.target.id === "master-role-button") setRole("master");
     if (event.target.id === "camp-role-button") openCamp();
 });
+
+elements.headerCampButton.addEventListener("click", () => openCamp());
 
 document.getElementById("master-login-button").addEventListener("click", async () => {
     const password = document.getElementById("master-password-input").value;
@@ -1272,6 +1375,7 @@ document.getElementById("add-character-button").addEventListener("click", addToI
 document.getElementById("add-monster-button").addEventListener("click", addMonsterToInitiative);
 document.getElementById("next-turn-button").addEventListener("click", nextTurn);
 document.getElementById("clear-button").addEventListener("click", clearInitiative);
+elements.playerEndTurnButton.addEventListener("click", nextTurn);
 
 document.getElementById("open-player-sheet-button").addEventListener("click", () => {
     openSheet(playerCharacterId);
@@ -1303,16 +1407,17 @@ document.getElementById("delete-master-character-button").addEventListener("clic
     await loadInitiative();
 });
 
-document.getElementById("back-from-camp-button").addEventListener("click", renderCurrentRole);
+document.getElementById("back-from-camp-button").addEventListener("click", closeCamp);
 document.getElementById("add-camp-building-button").addEventListener("click", createCampBuilding);
+document.getElementById("sheet-camp-button").addEventListener("click", () => openCamp("sheetView"));
 
 document.getElementById("close-sheet-button").addEventListener("click", () => {
     activeSheetCharacterId = null;
     renderCurrentRole();
 });
 
-document.getElementById("add-player-item-button").addEventListener("click", () => {
-    openBagEditor(playerCharacterId);
+document.getElementById("add-player-item-button").addEventListener("click", async () => {
+    await openBagEditor(playerCharacterId);
 });
 
 document.getElementById("cancel-bag-edit-button").addEventListener("click", () => {
@@ -1327,6 +1432,8 @@ document.getElementById("cancel-bag-edit-button").addEventListener("click", () =
 
 elements.itemNameInput.addEventListener("input", async () => {
     if (!bagEditor) return;
+    quickUpdateConfirmState();
+
     const items = await loadInventory(bagEditor.characterId);
     const otherItems = bagEditor.item
         ? items.filter((item) => item.id !== bagEditor.item.id)

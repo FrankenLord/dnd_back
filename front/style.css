@@ -122,6 +122,13 @@ h3 {
     place-items: center;
 }
 
+.header-actions,
+.player-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
 .role-screen button {
     font-size: 22px;
     min-height: 120px;
@@ -133,6 +140,106 @@ h3 {
     border-top: 1px solid #35f06a;
     margin-top: 16px;
     padding-top: 14px;
+}
+
+.player-view {
+    display: grid;
+    gap: 14px;
+}
+
+.player-hero {
+    align-items: stretch;
+    border: 1px solid rgba(53, 240, 106, 0.68);
+    display: grid;
+    gap: 14px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    margin-top: 16px;
+    padding: 14px;
+}
+
+.player-hero h2 {
+    color: #f0d35a;
+    font-size: 28px;
+    margin-bottom: 10px;
+}
+
+.player-actions {
+    align-content: start;
+    justify-content: end;
+}
+
+.player-actions button {
+    min-width: 120px;
+}
+
+.primary-button {
+    border-color: #f0d35a;
+    color: #f0d35a;
+}
+
+.primary-button:hover:not(:disabled) {
+    background: #f0d35a;
+    color: #131000;
+}
+
+.player-panel {
+    border-top: 1px solid rgba(53, 240, 106, 0.72);
+    padding-top: 14px;
+}
+
+.player-summary-grid {
+    display: grid;
+    gap: 10px;
+    grid-template-columns: 1.15fr 1fr;
+}
+
+.summary-card {
+    border: 1px solid rgba(53, 240, 106, 0.45);
+    display: grid;
+    gap: 10px;
+    min-width: 0;
+    padding: 12px;
+}
+
+.summary-main {
+    border-color: rgba(240, 211, 90, 0.72);
+}
+
+.summary-muted {
+    color: rgba(229, 247, 213, 0.74);
+}
+
+.compact-stat-grid,
+.save-grid {
+    display: grid;
+    gap: 8px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.compact-stat-grid div,
+.save-grid div {
+    border: 1px solid rgba(53, 240, 106, 0.28);
+    display: grid;
+    gap: 3px;
+    min-height: 62px;
+    padding: 8px;
+}
+
+.compact-stat-grid span,
+.save-grid span {
+    color: rgba(229, 247, 213, 0.74);
+    font-size: 13px;
+}
+
+.compact-stat-grid strong,
+.save-grid strong {
+    color: #e5f7d5;
+    font-size: 18px;
+}
+
+.compact-stat-grid em {
+    color: #8fd3ff;
+    font-style: normal;
 }
 
 .toolbar,
@@ -238,10 +345,10 @@ h3 {
 
 .turn-status {
     border: 2px solid #35f06a;
-    font-size: 24px;
+    font-size: 20px;
     font-weight: bold;
-    padding: 22px;
-    text-align: center;
+    padding: 12px;
+    text-align: left;
 }
 
 .turn-status.next {
@@ -254,7 +361,9 @@ h3 {
 }
 
 .hp-line {
-    font-size: 22px;
+    color: #e5f7d5;
+    font-size: 28px;
+    font-weight: bold;
     margin: 12px 0;
 }
 
@@ -405,7 +514,8 @@ h3 {
     .header,
     .row,
     .entry,
-    .profile-row {
+    .profile-row,
+    .player-hero {
         align-items: stretch;
         flex-direction: column;
     }
@@ -414,11 +524,28 @@ h3 {
     .toolbar,
     .grid-form,
     .character-form,
+    .player-hero,
+    .player-summary-grid,
     .stats-grid,
     .sheet-grid,
     .inventory-layout,
     .bag-editor-layout {
         grid-template-columns: 1fr;
+    }
+
+    .header-actions,
+    .player-actions {
+        justify-content: stretch;
+    }
+
+    .header-actions button,
+    .player-actions button {
+        flex: 1 1 140px;
+    }
+
+    .compact-stat-grid,
+    .save-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
     .role-screen {
