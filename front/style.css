@@ -203,6 +203,11 @@ h3 {
 
 .summary-main {
     border-color: rgba(240, 211, 90, 0.72);
+    grid-column: 1 / -1;
+}
+
+.summary-wide {
+    grid-column: 1 / -1;
 }
 
 .summary-muted {
@@ -341,6 +346,50 @@ h3 {
 .class-editor select {
     min-width: 180px;
     width: auto;
+}
+
+.small-button {
+    min-height: 34px;
+    min-width: 38px;
+    padding: 5px 8px;
+    width: auto;
+}
+
+.inline-form {
+    display: grid;
+    gap: 8px;
+    grid-template-columns: minmax(140px, 1.1fr) minmax(150px, 1fr) minmax(120px, 0.7fr) minmax(160px, 1fr) auto;
+}
+
+.condition-list {
+    display: grid;
+    gap: 8px;
+}
+
+.condition-row {
+    align-items: center;
+    border: 1px solid rgba(53, 240, 106, 0.28);
+    display: flex;
+    gap: 10px;
+    justify-content: space-between;
+    min-height: 54px;
+    padding: 8px;
+}
+
+.condition-row div:first-child {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+}
+
+.condition-row span {
+    color: #e5f7d5;
+}
+
+.condition-row em {
+    color: rgba(229, 247, 213, 0.74);
+    font-size: 13px;
+    font-style: normal;
 }
 
 .turn-status {
@@ -514,6 +563,7 @@ h3 {
     .header,
     .row,
     .entry,
+    .condition-row,
     .profile-row,
     .player-hero {
         align-items: stretch;
@@ -524,6 +574,7 @@ h3 {
     .toolbar,
     .grid-form,
     .character-form,
+    .inline-form,
     .player-hero,
     .player-summary-grid,
     .stats-grid,

@@ -15,7 +15,96 @@ const SAVES = [
     {field: "fortitude_save", label: "Стойкость"},
     {field: "will_save", label: "Воля"},
 ];
+const SAVE_STAT_FIELDS = {
+    reflex_save: "DEX",
+    fortitude_save: "CON",
+    will_save: "WIS",
+};
+const LOW_SAVE_BONUS = [0, 0, 1, 1, 1, 2, 2, 2, 3, 3];
+const MID_SAVE_BONUS = [1, 1, 1, 2, 2, 2, 3, 3, 3, 4];
+const HIGH_SAVE_BONUS = [1, 1, 2, 2, 3, 4, 4, 5, 5, 6];
+const SAVE_BONUSES = {
+    "Жрец": {
+        reflex_save: LOW_SAVE_BONUS,
+        fortitude_save: MID_SAVE_BONUS,
+        will_save: HIGH_SAVE_BONUS,
+    },
+    "Вор": {
+        reflex_save: HIGH_SAVE_BONUS,
+        fortitude_save: MID_SAVE_BONUS,
+        will_save: LOW_SAVE_BONUS,
+    },
+    "Плут": {
+        reflex_save: HIGH_SAVE_BONUS,
+        fortitude_save: MID_SAVE_BONUS,
+        will_save: LOW_SAVE_BONUS,
+    },
+    "Воин": {
+        reflex_save: MID_SAVE_BONUS,
+        fortitude_save: HIGH_SAVE_BONUS,
+        will_save: LOW_SAVE_BONUS,
+    },
+    "Маг": {
+        reflex_save: MID_SAVE_BONUS,
+        fortitude_save: LOW_SAVE_BONUS,
+        will_save: HIGH_SAVE_BONUS,
+    },
+    "Волшебник": {
+        reflex_save: MID_SAVE_BONUS,
+        fortitude_save: LOW_SAVE_BONUS,
+        will_save: HIGH_SAVE_BONUS,
+    },
+    "Дварф": {
+        reflex_save: MID_SAVE_BONUS,
+        fortitude_save: HIGH_SAVE_BONUS,
+        will_save: MID_SAVE_BONUS,
+    },
+    "Эльф": {
+        reflex_save: MID_SAVE_BONUS,
+        fortitude_save: MID_SAVE_BONUS,
+        will_save: HIGH_SAVE_BONUS,
+    },
+    "Полурослик": {
+        reflex_save: HIGH_SAVE_BONUS,
+        fortitude_save: MID_SAVE_BONUS,
+        will_save: HIGH_SAVE_BONUS,
+    },
+};
+const CONDITION_TARGETS = [
+    {value: "STR", label: "Сил"},
+    {value: "DEX", label: "Лвк"},
+    {value: "CON", label: "Тел"},
+    {value: "INT", label: "Инт"},
+    {value: "WIS", label: "Лич"},
+    {value: "LUC", label: "Удч"},
+    {value: "reflex_save", label: "Реакция"},
+    {value: "fortitude_save", label: "Стойкость"},
+    {value: "will_save", label: "Воля"},
+    {value: "max_hp", label: "МаксHP"},
+    {value: "base_speed", label: "Скорость"},
+    {value: "special", label: "Особое"},
+];
+const ATTACK_TYPES = [
+    {value: "melee", label: "Атака Оружием Ближнего Боя"},
+    {value: "ranged", label: "Атака оружием Дальнего Боя"},
+    {value: "spell", label: "Проверка заклинания"},
+    {value: "special", label: "Особое"},
+];
 const WARRIOR_LOAD_CLASSES = ["Воин", "Дварф"];
+const WIZARD_CLASSES = ["Маг", "Волшебник"];
+const CLERIC_CLASSES = ["Жрец"];
+const FEAT_DICE = {
+    1: "d3",
+    2: "d4",
+    3: "d5",
+    4: "d6",
+    5: "d7",
+    6: "d8",
+    7: "d10+1",
+    8: "d10+2",
+    9: "d10+3",
+    10: "d10+4",
+};
 const BAG_ROWS = 4;
 const BAG_COLS = 7;
 
@@ -99,6 +188,133 @@ function formatSigned(value) {
     return number > 0 ? `+${number}` : String(number);
 }
 
+function escapeHtml(value) {
+    return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll("\"", "&quot;")
+        .replaceAll("'", "&#039;");
+}
+
+function conditionTargetLabel(target) {
+    return CONDITION_TARGETS.find((item) => item.value === target)?.label || target;
+}
+
+function attackTypeLabel(type) {
+    return ATTACK_TYPES.find((item) => item.value === type)?.label || type;
+}
+
+function optionList(options, selectedValue) {
+    return options.map((option) => `
+        <option value="${option.value}" ${option.value === selectedValue ? "selected" : ""}>${option.label}</option>
+    `).join("");
+}
+
+function classBaseSpeed(className) {
+    return ["Дварф", "Полурослик"].includes(className) ? 20 : 30;
+}
+
+function characterBaseSpeed(character) {
+    return classBaseSpeed(character.clas);
+}
+
+function classSaveBonus(character, saveField) {
+    const level = Number(character.level || 0);
+    if (level <= 0) return 0;
+
+    const progression = SAVE_BONUSES[character.clas]?.[saveField] || LOW_SAVE_BONUS;
+    return progression[Math.max(1, Math.min(10, level)) - 1];
+}
+
+function saveDisplayValue(character, effective, saveField) {
+    if (Number(character.level || 0) <= 0) return 0;
+
+    const serverTotal = Number(character[`${saveField}_total`]);
+    const stat = SAVE_STAT_FIELDS[saveField];
+
+    if (!Number.isNaN(serverTotal) && stat) {
+        const saveShift = Number(effective[saveField] ?? 0) - Number(character[saveField] ?? 0);
+        const statShift = abilityModifier(Number(effective[`current_${stat}`] ?? 0))
+            - abilityModifier(Number(character[`current_${stat}`] ?? 0));
+        return serverTotal + saveShift + statShift;
+    }
+
+    return Number(effective[saveField] ?? 0)
+        + abilityModifier(Number(effective[`current_${stat}`] ?? 0))
+        + classSaveBonus(character, saveField);
+}
+
+function effectiveCharacter(character, conditions = []) {
+    const effective = {
+        ...character,
+        base_speed: characterBaseSpeed(character),
+    };
+
+    conditions.forEach((condition) => {
+        const value = Number(condition.value || 0);
+        if (value <= 0 || condition.target === "special") return;
+
+        if (STATS.includes(condition.target)) {
+            const field = `current_${condition.target}`;
+            effective[field] = Math.max(0, Number(effective[field] ?? 0) - value);
+            return;
+        }
+
+        if (condition.target === "max_hp") {
+            effective.max_hp = Math.max(1, Number(effective.max_hp ?? 1) - value);
+            effective.current_hp = Math.min(Number(effective.current_hp ?? 0), effective.max_hp);
+            return;
+        }
+
+        if (condition.target === "base_speed") {
+            effective.base_speed = Math.max(0, Number(effective.base_speed ?? characterBaseSpeed(character)) - value);
+            return;
+        }
+
+        if (SAVES.some((save) => save.field === condition.target)) {
+            effective[condition.target] = Number(effective[condition.target] ?? 0) - value;
+        }
+    });
+
+    return effective;
+}
+
+function featDie(character) {
+    const level = Math.max(1, Math.min(10, Number(character.level || 0)));
+    return FEAT_DICE[level] || FEAT_DICE[1];
+}
+
+function attackModifierParts(character, attack) {
+    const bonus = Number(attack.bonus || 0);
+    let total = bonus;
+    let die = null;
+
+    if (attack.attack_type === "melee") {
+        total += abilityModifier(Number(character.current_STR ?? character.STR));
+        if (WARRIOR_LOAD_CLASSES.includes(character.clas)) die = featDie(character);
+    }
+
+    if (attack.attack_type === "ranged") {
+        total += abilityModifier(Number(character.current_DEX ?? character.DEX));
+        if (WARRIOR_LOAD_CLASSES.includes(character.clas)) die = featDie(character);
+    }
+
+    if (attack.attack_type === "spell" && CLERIC_CLASSES.includes(character.clas)) {
+        total += abilityModifier(Number(character.current_WIS ?? character.WIS)) + Number(character.level || 0);
+    }
+
+    if (attack.attack_type === "spell" && WIZARD_CLASSES.includes(character.clas)) {
+        total += abilityModifier(Number(character.current_INT ?? character.INT)) + Number(character.level || 0);
+    }
+
+    return {
+        total,
+        label: die ? `${formatSigned(total)} + ${die}` : formatSigned(total),
+        die,
+    };
+}
+
 function loadCapacity(character) {
     const strength = Number(character.current_STR ?? character.STR);
     const isWarriorLoad = WARRIOR_LOAD_CLASSES.includes(character.clas);
@@ -119,11 +335,33 @@ function overloadPenalty(extraCells) {
     return "-15ф, -3к действия, +3к фиаско";
 }
 
-function renderLoadStatus(character, items) {
+function overloadSpeedPenalty(extraCells) {
+    if (extraCells <= 0) return 0;
+    if (extraCells <= 4) return 5;
+    if (extraCells <= 8) return 10;
+    return 15;
+}
+
+function loadSummary(character, items) {
     const usedCells = items.reduce((total, item) => total + item.cell_count, 0);
     const capacity = loadCapacity(character);
     const extraCells = Math.max(0, usedCells - capacity);
-    const penalty = overloadPenalty(extraCells);
+    return {
+        usedCells,
+        capacity,
+        extraCells,
+        penalty: overloadPenalty(extraCells),
+        speedPenalty: overloadSpeedPenalty(extraCells),
+    };
+}
+
+function effectiveSpeed(character, items = []) {
+    const summary = loadSummary(character, items);
+    return Math.max(0, Number(character.base_speed ?? characterBaseSpeed(character)) - summary.speedPenalty);
+}
+
+function renderLoadStatus(character, items) {
+    const {usedCells, capacity, extraCells, penalty} = loadSummary(character, items);
 
     if (!penalty) {
         return `нет перегруза (${usedCells}/${capacity})`;
@@ -171,6 +409,116 @@ function renderXPBlock(character, actionLocation) {
             </div>
             <button data-xp-action="add" data-id="${character.id}" data-location="${actionLocation}">Добавить XP</button>
         </div>
+    `;
+}
+
+function renderCharacterCoreBlock(character, actionLocation, conditions = [], items = []) {
+    const effective = effectiveCharacter(character, conditions);
+    const hpText = effective.max_hp === character.max_hp
+        ? `${character.current_hp}/${character.max_hp}`
+        : `${effective.current_hp}/${effective.max_hp} (${character.current_hp}/${character.max_hp})`;
+
+    return `
+        <section class="summary-card summary-main">
+            <div class="character-subtitle">${escapeHtml(character.clas)} ${character.level} уровня</div>
+            <div class="hp-line">HP: ${hpText}</div>
+            <div class="summary-muted">Скорость ${effectiveSpeed(effective, items)}</div>
+            ${renderXPBlock(character, actionLocation)}
+        </section>
+    `;
+}
+
+function renderConditionForm(characterId, condition = null) {
+    const formId = condition ? String(condition.id) : "add";
+    const action = condition ? "save" : "create";
+    return `
+        <div class="inline-form hidden" data-condition-form="${formId}">
+            <input data-condition-input="name" value="${escapeHtml(condition?.name || "")}" placeholder="Название">
+            <select data-condition-input="target" required>
+                <option value="">Характеристика</option>
+                ${optionList(CONDITION_TARGETS, condition?.target || "")}
+            </select>
+            <input data-condition-input="value" type="number" min="0" value="${condition?.value ?? ""}" placeholder="Значение" required>
+            <input data-condition-input="treatment" value="${escapeHtml(condition?.treatment || "")}" placeholder="Способ лечения">
+            <button data-condition-action="${action}" data-id="${characterId}" data-condition-id="${condition?.id || ""}">Подтвердить</button>
+        </div>
+    `;
+}
+
+function renderConditionsBlock(character, conditions, actionLocation) {
+    return `
+        <section class="summary-card summary-wide" data-condition-panel>
+            <div class="row">
+                <h3>Травмы и состояния</h3>
+                <button class="small-button" data-condition-action="toggle" data-form-id="add">+</button>
+            </div>
+            ${renderConditionForm(character.id)}
+            <div class="condition-list">
+                ${conditions.length === 0 ? `<p class="muted">Нет активных состояний.</p>` : ""}
+                ${conditions.map((condition) => `
+                    <div class="condition-row">
+                        <div>
+                            <strong>${escapeHtml(condition.name)}</strong>
+                            <span>${conditionTargetLabel(condition.target)} -${condition.value}</span>
+                            ${condition.treatment ? `<em>${escapeHtml(condition.treatment)}</em>` : ""}
+                        </div>
+                        <div class="entry-actions">
+                            <button class="small-button" title="Редактировать" data-condition-action="toggle" data-form-id="${condition.id}">✎</button>
+                            <button data-condition-action="delete" data-id="${character.id}" data-condition-id="${condition.id}" data-location="${actionLocation}">Убрать</button>
+                        </div>
+                    </div>
+                    ${renderConditionForm(character.id, condition)}
+                `).join("")}
+            </div>
+        </section>
+    `;
+}
+
+function renderAttackForm(characterId, attack = null) {
+    const formId = attack ? String(attack.id) : "add";
+    const action = attack ? "save" : "create";
+    return `
+        <div class="inline-form hidden" data-attack-form="${formId}">
+            <select data-attack-input="attack_type" required>
+                <option value="">Тип проверки</option>
+                ${optionList(ATTACK_TYPES, attack?.attack_type || "")}
+            </select>
+            <input data-attack-input="name" value="${escapeHtml(attack?.name || "")}" placeholder="Название">
+            <input data-attack-input="bonus" type="number" value="${attack?.bonus ?? ""}" placeholder="Доп. модификатор" required>
+            <button data-attack-action="${action}" data-id="${characterId}" data-attack-id="${attack?.id || ""}">Подтвердить</button>
+        </div>
+    `;
+}
+
+function renderAttacksBlock(character, attacks, actionLocation) {
+    return `
+        <section class="summary-card summary-wide" data-attack-panel>
+            <div class="row">
+                <h3>Атаки и Заклинания</h3>
+                <button class="small-button" data-attack-action="toggle" data-form-id="add">+</button>
+            </div>
+            ${renderAttackForm(character.id)}
+            <div class="condition-list">
+                ${attacks.length === 0 ? `<p class="muted">Нет сохраненных проверок.</p>` : ""}
+                ${attacks.map((attack) => {
+                    const modifier = attackModifierParts(character, attack);
+                    return `
+                        <div class="condition-row">
+                            <div>
+                                <strong>${escapeHtml(attack.name)}</strong>
+                                <span>${attackTypeLabel(attack.attack_type)}: ${modifier.label}</span>
+                                <em>Доп. ${formatSigned(attack.bonus)}${modifier.die ? `, куб подвига ${modifier.die}` : ""}</em>
+                            </div>
+                            <div class="entry-actions">
+                                <button class="small-button" title="Редактировать" data-attack-action="toggle" data-form-id="${attack.id}">✎</button>
+                                <button data-attack-action="delete" data-id="${character.id}" data-attack-id="${attack.id}" data-location="${actionLocation}">Убрать</button>
+                            </div>
+                        </div>
+                        ${renderAttackForm(character.id, attack)}
+                    `;
+                }).join("")}
+            </div>
+        </section>
     `;
 }
 
@@ -237,6 +585,10 @@ function currentVisibleViewName() {
     ];
 
     return viewNames.find((viewName) => !elements[viewName].classList.contains("hidden")) || null;
+}
+
+function hasOpenInlineEditor() {
+    return Boolean(document.querySelector("[data-condition-form]:not(.hidden), [data-attack-form]:not(.hidden)"));
 }
 
 async function api(path, options = {}) {
@@ -404,7 +756,8 @@ function renderMasterInitiative() {
     });
 }
 
-async function renderPlayerView() {
+async function renderPlayerView(force = false) {
+    if (!force && hasOpenInlineEditor()) return;
     if (role !== "player" || !playerCharacterId) return;
 
     const character = availablePlayerCharacters().find((item) => item.id === playerCharacterId);
@@ -431,25 +784,25 @@ async function renderPlayerView() {
     }
     elements.playerEndTurnButton.disabled = !initiativeEntry?.is_current;
 
-    const items = await loadInventory(character.id);
+    const [items, conditions, attacks] = await Promise.all([
+        loadInventory(character.id),
+        loadConditions(character.id),
+        loadAttacks(character.id),
+    ]);
+    const effective = effectiveCharacter(character, conditions);
     elements.playerSummary.innerHTML = `
         <div class="player-summary-grid">
-            <section class="summary-card summary-main">
-                <div class="character-subtitle">${character.clas} ${character.level} уровня</div>
-                <div class="hp-line">HP: ${character.current_hp}/${character.max_hp}</div>
-                <div class="summary-muted">Скорость ${character.base_speed || 30}</div>
-            </section>
-            <section class="summary-card">
-                ${renderXPBlock(character, "player")}
-            </section>
+            ${renderCharacterCoreBlock(character, "player", conditions, items)}
+            ${renderConditionsBlock(character, conditions, "player")}
+            ${renderAttacksBlock(effective, attacks, "player")}
             <section class="summary-card">
                 <h3>Характеристики</h3>
                 <div class="compact-stat-grid">
                     ${STATS.map((stat) => `
                         <div>
                             <span>${STAT_LABELS[stat]}</span>
-                            <strong>${character[`current_${stat}`]}/${character[stat]}</strong>
-                            <em>${formatModifier(character[`current_${stat}`])}</em>
+                            <strong>${effective[`current_${stat}`]}/${character[stat]}</strong>
+                            <em>${formatModifier(effective[`current_${stat}`])}</em>
                         </div>
                     `).join("")}
                 </div>
@@ -460,14 +813,14 @@ async function renderPlayerView() {
                     ${SAVES.map((save) => `
                         <div>
                             <span>${save.label}</span>
-                            <strong>${formatSigned(character[save.field])}</strong>
+                            <strong>${formatSigned(saveDisplayValue(character, effective, save.field))}</strong>
                         </div>
                     `).join("")}
                 </div>
             </section>
         </div>
     `;
-    elements.playerLoadStatus.textContent = renderLoadStatus(character, items);
+    elements.playerLoadStatus.textContent = renderLoadStatus(effective, items);
     if (document.activeElement !== elements.playerNotes) {
         elements.playerNotes.value = character.notes || "";
         autoSizeTextarea(elements.playerNotes);
@@ -708,7 +1061,15 @@ async function openSheet(characterId) {
     activeSheetCharacterId = character.id;
     elements.sheetTitle.textContent = `Изменить персонажа: ${character.name}`;
 
-    const items = await loadInventory(character.id);
+    const [items, conditions, attacks] = await Promise.all([
+        loadInventory(character.id),
+        loadConditions(character.id),
+        loadAttacks(character.id),
+    ]);
+    const effective = effectiveCharacter(character, conditions);
+    const hpText = effective.max_hp === character.max_hp
+        ? `${character.current_hp}/${character.max_hp}`
+        : `${effective.current_hp}/${effective.max_hp} (${character.current_hp}/${character.max_hp})`;
 
     elements.sheetContent.innerHTML = `
         <div class="sheet-grid">
@@ -729,25 +1090,21 @@ async function openSheet(characterId) {
                     </select>
                     <button data-sheet-action="owner-save" data-id="${character.id}">Владелец</button>
                 </div>
-            </section>
-            <section>
-                <h3>Опыт</h3>
                 ${renderXPBlock(character, "sheet")}
-            </section>
-            <section>
-                <h3>HP</h3>
                 <div class="stat-editor">
-                    <span>${character.current_hp}/${character.max_hp}</span>
+                    <span>HP: ${hpText}</span>
                     <button data-sheet-action="hp-damage" data-id="${character.id}">-</button>
                     <button data-sheet-action="max-hp" data-id="${character.id}">Изм. макс.</button>
                     <button data-sheet-action="hp-heal" data-id="${character.id}">+</button>
                 </div>
             </section>
+            ${renderConditionsBlock(character, conditions, "sheet")}
+            ${renderAttacksBlock(effective, attacks, "sheet")}
             <section>
                 <h3>Статы</h3>
                 ${STATS.map((stat) => `
                     <div class="stat-editor">
-                        <span>${STAT_LABELS[stat]}: ${character[`current_${stat}`]}/${character[stat]} (${formatModifier(character[`current_${stat}`])})</span>
+                        <span>${STAT_LABELS[stat]}: ${effective[`current_${stat}`]}/${character[stat]} (${formatModifier(effective[`current_${stat}`])})</span>
                         <button data-sheet-action="stat-minus" data-id="${character.id}" data-stat="${stat}">-</button>
                         <button data-sheet-action="stat-max" data-id="${character.id}" data-stat="${stat}">Изм. макс.</button>
                         <button data-sheet-action="stat-plus" data-id="${character.id}" data-stat="${stat}">+</button>
@@ -758,8 +1115,9 @@ async function openSheet(characterId) {
                 <h3>Спасы</h3>
                 ${SAVES.map((save) => `
                     <div class="stat-editor">
-                        <span>${save.label}: ${formatSigned(character[save.field])}</span>
+                        <span>${save.label}: ${formatSigned(saveDisplayValue(character, effective, save.field))} (попр. ${formatSigned(character[save.field])})</span>
                         <button data-sheet-action="save-minus" data-id="${character.id}" data-save="${save.field}">-</button>
+                        <button data-sheet-action="save-reset" data-id="${character.id}" data-save="${save.field}">Сбросить</button>
                         <button data-sheet-action="save-plus" data-id="${character.id}" data-save="${save.field}">+</button>
                     </div>
                 `).join("")}
@@ -767,13 +1125,13 @@ async function openSheet(characterId) {
             <section>
                 <h3>Скорость</h3>
                 <div class="stat-editor">
-                    <span>Базовая скорость: ${character.base_speed || 30}</span>
+                    <span>Скорость: ${effectiveSpeed(effective, items)} / база ${characterBaseSpeed(character)}</span>
                 </div>
             </section>
         </div>
         <section class="panel">
             <div class="row">
-                <h2>Сумка <span class="load-status">${renderLoadStatus(character, items)}</span></h2>
+                <h2>Сумка <span class="load-status">${renderLoadStatus(effective, items)}</span></h2>
                 <button data-inventory-action="add" data-character-id="${character.id}">Добавить предмет</button>
             </div>
             <div class="inventory-layout">
@@ -896,7 +1254,7 @@ async function addCharacterXP(characterId, location = "player") {
         return;
     }
 
-    await renderPlayerView();
+    await renderPlayerView(true);
 }
 
 async function updateCharacterStat(characterId, stat, delta) {
@@ -918,10 +1276,21 @@ async function updateCharacterSave(characterId, saveField, delta) {
     const character = characters.find((item) => item.id === Number(characterId));
     if (!character) return;
 
+    await setCharacterSave(character, saveField, character[saveField] + delta);
+}
+
+async function resetCharacterSave(characterId, saveField) {
+    const character = characters.find((item) => item.id === Number(characterId));
+    if (!character) return;
+
+    await setCharacterSave(character, saveField, 0);
+}
+
+async function setCharacterSave(character, saveField, value) {
     await api(`/characters/${character.id}/saves`, {
         method: "PATCH",
         body: JSON.stringify({
-            [saveField]: character[saveField] + delta,
+            [saveField]: value,
         }),
     });
 
@@ -945,6 +1314,138 @@ async function savePlayerNotes() {
 
 async function loadInventory(characterId) {
     return api(`/characters/${characterId}/inventory`);
+}
+
+async function loadConditions(characterId) {
+    return api(`/characters/${characterId}/conditions`);
+}
+
+async function loadAttacks(characterId) {
+    return api(`/characters/${characterId}/attacks`);
+}
+
+async function refreshCharacterSurface(characterId, location = null) {
+    await loadCharacters();
+    const visible = currentVisibleViewName();
+
+    if (location === "sheet" || (visible === "sheetView" && activeSheetCharacterId === Number(characterId))) {
+        await openSheet(characterId);
+        return;
+    }
+
+    await renderPlayerView(true);
+}
+
+function findInlineForm(button, kind) {
+    const panel = button.closest(`[data-${kind}-panel]`);
+    if (!panel) return null;
+
+    const formId = button.dataset.formId || "add";
+    return [...panel.querySelectorAll(`[data-${kind}-form]`)]
+        .find((form) => form.dataset[`${kind}Form`] === formId);
+}
+
+function readConditionForm(form) {
+    const target = form.querySelector('[data-condition-input="target"]').value;
+    const value = Number(form.querySelector('[data-condition-input="value"]').value);
+
+    if (!target || Number.isNaN(value) || value < 0) return null;
+
+    return {
+        name: form.querySelector('[data-condition-input="name"]').value.trim(),
+        target,
+        value,
+        treatment: form.querySelector('[data-condition-input="treatment"]').value.trim(),
+    };
+}
+
+async function handleConditionAction(button) {
+    const action = button.dataset.conditionAction;
+
+    if (action === "toggle") {
+        const form = findInlineForm(button, "condition");
+        if (form) form.classList.toggle("hidden");
+        return;
+    }
+
+    const characterId = Number(button.dataset.id);
+    if (!characterId) return;
+
+    if (action === "delete") {
+        await api(`/characters/${characterId}/conditions/${button.dataset.conditionId}`, {method: "DELETE"});
+        await refreshCharacterSurface(characterId, button.dataset.location);
+        return;
+    }
+
+    if (action === "create" || action === "save") {
+        const form = button.closest("[data-condition-form]");
+        if (!form) return;
+
+        const data = readConditionForm(form);
+        if (!data) return;
+
+        const conditionId = button.dataset.conditionId;
+        const path = action === "save"
+            ? `/characters/${characterId}/conditions/${conditionId}`
+            : `/characters/${characterId}/conditions`;
+
+        await api(path, {
+            method: action === "save" ? "PATCH" : "POST",
+            body: JSON.stringify(data),
+        });
+        await refreshCharacterSurface(characterId);
+    }
+}
+
+function readAttackForm(form) {
+    const attackType = form.querySelector('[data-attack-input="attack_type"]').value;
+    const bonus = Number(form.querySelector('[data-attack-input="bonus"]').value);
+
+    if (!attackType || Number.isNaN(bonus)) return null;
+
+    return {
+        attack_type: attackType,
+        name: form.querySelector('[data-attack-input="name"]').value.trim(),
+        bonus,
+    };
+}
+
+async function handleAttackAction(button) {
+    const action = button.dataset.attackAction;
+
+    if (action === "toggle") {
+        const form = findInlineForm(button, "attack");
+        if (form) form.classList.toggle("hidden");
+        return;
+    }
+
+    const characterId = Number(button.dataset.id);
+    if (!characterId) return;
+
+    if (action === "delete") {
+        await api(`/characters/${characterId}/attacks/${button.dataset.attackId}`, {method: "DELETE"});
+        await refreshCharacterSurface(characterId, button.dataset.location);
+        return;
+    }
+
+    if (action === "create" || action === "save") {
+        const form = button.closest("[data-attack-form]");
+        if (!form) return;
+
+        const data = readAttackForm(form);
+        if (!data) return;
+
+        const attackId = button.dataset.attackId;
+        const path = action === "save"
+            ? `/characters/${characterId}/attacks/${attackId}`
+            : `/characters/${characterId}/attacks`;
+
+        await api(path, {
+            method: action === "save" ? "PATCH" : "POST",
+            body: JSON.stringify(data),
+        });
+        await refreshCharacterSurface(characterId);
+    }
 }
 
 async function loadCampBuildings() {
@@ -1057,8 +1558,7 @@ function renderInventory(grid, tbody, characterId, items) {
             <td>${item.name}</td>
             <td>${item.cell_count || "—"}</td>
             <td class="table-actions">
-                <button data-inventory-action="position" data-character-id="${characterId}" data-item-id="${item.id}" ${item.cell_count ? "" : "disabled"}>Положение</button>
-                <button data-inventory-action="edit" data-character-id="${characterId}" data-item-id="${item.id}">Предмет</button>
+                <button data-inventory-action="edit" data-character-id="${characterId}" data-item-id="${item.id}">✎ Изм Предмет</button>
                 <button data-inventory-action="delete" data-character-id="${characterId}" data-item-id="${item.id}">Удалить</button>
             </td>
         `;
@@ -1487,6 +1987,18 @@ document.addEventListener("click", (event) => {
     const button = event.target.closest("[data-inventory-action]");
     if (button) handleInventoryAction(button);
 
+    const conditionButton = event.target.closest("[data-condition-action]");
+    if (conditionButton) {
+        handleConditionAction(conditionButton);
+        return;
+    }
+
+    const attackButton = event.target.closest("[data-attack-action]");
+    if (attackButton) {
+        handleAttackAction(attackButton);
+        return;
+    }
+
     const xpButton = event.target.closest("[data-xp-action]");
     if (xpButton) addCharacterXP(Number(xpButton.dataset.id), xpButton.dataset.location);
 
@@ -1562,6 +2074,7 @@ elements.sheetContent.addEventListener("click", (event) => {
     if (action === "stat-max") updateCharacterMaxStat(characterId, button.dataset.stat);
     if (action === "stat-plus") updateCharacterStat(characterId, button.dataset.stat, 1);
     if (action === "save-minus") updateCharacterSave(characterId, button.dataset.save, -1);
+    if (action === "save-reset") resetCharacterSave(characterId, button.dataset.save);
     if (action === "save-plus") updateCharacterSave(characterId, button.dataset.save, 1);
 });
 
@@ -1592,7 +2105,7 @@ async function start() {
 }
 
 setInterval(async () => {
-    if (bagEditor) return;
+    if (bagEditor || hasOpenInlineEditor()) return;
     await loadCharacters();
     await loadInitiative();
 }, 2000);

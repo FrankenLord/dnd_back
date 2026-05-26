@@ -1,7 +1,5 @@
 from pathlib import Path
 import json
-import random
-
 import hashlib
 import hmac
 import os
@@ -16,8 +14,10 @@ from sqlalchemy.orm import Session
 from database import SessionLocal, engine
 from models import (
     Base,
+    attack_check,
     camp_building,
     character,
+    character_condition,
     initiative,
     inventory_item,
     monster,
@@ -29,10 +29,25 @@ MASTER_PASSWORD = "Em4758@Pro"
 BAG_ROWS = 4
 BAG_COLS = 7
 XP_THRESHOLDS = [0, 10, 50, 110, 190, 290, 410, 550, 710, 890, 1090]
+CONDITION_TARGETS = {
+    "STR",
+    "DEX",
+    "CON",
+    "INT",
+    "WIS",
+    "LUC",
+    "reflex_save",
+    "fortitude_save",
+    "will_save",
+    "max_hp",
+    "base_speed",
+    "special",
+}
+ATTACK_TYPES = {"melee", "ranged", "spell", "special"}
 
 
-def roll_d20():
-    return random.randint(1, 20)
+def class_base_speed(class_name: str) -> int:
+    return 20 if class_name in {"Дварф", "Полурослик"} else 30
 
 
 app = FastAPI()
@@ -85,6 +100,13 @@ def ensure_schema():
 
         conn.execute(
             text("ALTER TABLE initiative ADD COLUMN IF NOT EXISTS monster_id INTEGER")
+        )
+        conn.execute(
+            text(
+                'UPDATE characters SET "base_speed" = 20 '
+                'WHERE "clas" IN (:dwarf, :halfling) AND "base_speed" = 30'
+            ),
+            {"dwarf": "Дварф", "halfling": "Полурослик"},
         )
 
 
@@ -153,6 +175,51 @@ class CharacterNotesUpdate(BaseModel):
     notes: str = ""
 
 
+class CharacterConditionInput(BaseModel):
+    name: str = ""
+    target: str
+    value: int
+    treatment: str = ""
+
+
+class CharacterConditionUpdate(BaseModel):
+    name: str | None = None
+    target: str | None = None
+    value: int | None = None
+    treatment: str | None = None
+
+
+class CharacterConditionResponse(BaseModel):
+    model_config = {"from_attributes": True}
+    id: int
+    character_id: int
+    name: str
+    target: str
+    value: int
+    treatment: str
+
+
+class AttackCheckInput(BaseModel):
+    attack_type: str
+    name: str = ""
+    bonus: int
+
+
+class AttackCheckUpdate(BaseModel):
+    attack_type: str | None = None
+    name: str | None = None
+    bonus: int | None = None
+
+
+class AttackCheckResponse(BaseModel):
+    model_config = {"from_attributes": True}
+    id: int
+    character_id: int
+    attack_type: str
+    name: str
+    bonus: int
+
+
 class CharacterResponse(BaseModel):
     model_config = {"from_attributes": True}
     id: int
@@ -178,6 +245,9 @@ class CharacterResponse(BaseModel):
     reflex_save: int
     fortitude_save: int
     will_save: int
+    reflex_save_total: int
+    fortitude_save_total: int
+    will_save_total: int
     notes: str
     base_speed: int
 
@@ -404,6 +474,60 @@ def inventory_response(item: inventory_item) -> InventoryItemResponse:
     )
 
 
+def normalize_condition_name(name: str) -> str:
+    return name.strip() or "Без названия"
+
+
+def validate_condition_target(target: str) -> str:
+    if target not in CONDITION_TARGETS:
+        raise HTTPException(status_code=400, detail="Invalid condition target")
+    return target
+
+
+def validate_non_negative_value(value: int, detail: str) -> int:
+    if value < 0:
+        raise HTTPException(status_code=400, detail=detail)
+    return value
+
+
+def normalize_attack_name(name: str) -> str:
+    return name.strip() or "Проверка"
+
+
+def validate_attack_type(attack_type: str) -> str:
+    if attack_type not in ATTACK_TYPES:
+        raise HTTPException(status_code=400, detail="Invalid attack type")
+    return attack_type
+
+
+def require_condition(character_id: int, condition_id: int, db: Session):
+    condition = (
+        db.query(character_condition)
+        .filter(
+            character_condition.id == condition_id,
+            character_condition.character_id == character_id,
+        )
+        .first()
+    )
+    if not condition:
+        raise HTTPException(status_code=404, detail="Condition not found")
+    return condition
+
+
+def require_attack_check(character_id: int, attack_id: int, db: Session):
+    attack = (
+        db.query(attack_check)
+        .filter(
+            attack_check.id == attack_id,
+            attack_check.character_id == character_id,
+        )
+        .first()
+    )
+    if not attack:
+        raise HTTPException(status_code=404, detail="Attack check not found")
+    return attack
+
+
 @app.get("/api/health")
 def health():
     return {"message": "Server with DB is running"}
@@ -503,6 +627,7 @@ def create_character(data: CharacterCreate, db: Session = Depends(get_db)):
         current_INT=data.INT,
         current_WIS=data.WIS,
         current_LUC=data.LUC,
+        base_speed=class_base_speed(data.clas),
         owner_profile_id=data.owner_profile_id,
     )
     db.add(new_character)
@@ -541,6 +666,7 @@ def update_character_details(
         if not next_class:
             raise HTTPException(status_code=400, detail="Class cannot be empty")
         char.clas = next_class
+        char.base_speed = class_base_speed(next_class)
 
     if "max_hp" in fields:
         if data.max_hp is None or data.max_hp < 1:
@@ -587,10 +713,6 @@ def update_stats(character_id: int, data: StatsUpdate, db: Session = Depends(get
         if value is not None:
             maximum = getattr(char, stat)
             setattr(char, field_name, clamp(value, 0, maximum))
-    
-    for save in ["reflex_save", "fortitude_save", "will_save"]:
-        setattr(char, save, roll_d20())
-
     db.commit()
     db.refresh(char)
     return char
@@ -645,11 +767,173 @@ def update_character_notes(
     return char
 
 
+@app.get(
+    "/characters/{character_id}/conditions",
+    response_model=list[CharacterConditionResponse],
+)
+def get_character_conditions(character_id: int, db: Session = Depends(get_db)):
+    require_character(character_id, db)
+    return (
+        db.query(character_condition)
+        .filter(character_condition.character_id == character_id)
+        .order_by(character_condition.id)
+        .all()
+    )
+
+
+@app.post(
+    "/characters/{character_id}/conditions",
+    response_model=CharacterConditionResponse,
+)
+def create_character_condition(
+    character_id: int,
+    data: CharacterConditionInput,
+    db: Session = Depends(get_db),
+):
+    require_character(character_id, db)
+    condition = character_condition(
+        character_id=character_id,
+        name=normalize_condition_name(data.name),
+        target=validate_condition_target(data.target),
+        value=validate_non_negative_value(data.value, "Condition value cannot be negative"),
+        treatment=data.treatment.strip(),
+    )
+    db.add(condition)
+    db.commit()
+    db.refresh(condition)
+    return condition
+
+
+@app.patch(
+    "/characters/{character_id}/conditions/{condition_id}",
+    response_model=CharacterConditionResponse,
+)
+def update_character_condition(
+    character_id: int,
+    condition_id: int,
+    data: CharacterConditionUpdate,
+    db: Session = Depends(get_db),
+):
+    require_character(character_id, db)
+    condition = require_condition(character_id, condition_id, db)
+
+    if "name" in data.model_fields_set:
+        condition.name = normalize_condition_name(data.name or "")
+
+    if "target" in data.model_fields_set:
+        condition.target = validate_condition_target(data.target or "")
+
+    if "value" in data.model_fields_set:
+        if data.value is None:
+            raise HTTPException(status_code=400, detail="Condition value is required")
+        condition.value = validate_non_negative_value(data.value, "Condition value cannot be negative")
+
+    if "treatment" in data.model_fields_set:
+        condition.treatment = (data.treatment or "").strip()
+
+    db.commit()
+    db.refresh(condition)
+    return condition
+
+
+@app.delete("/characters/{character_id}/conditions/{condition_id}")
+def delete_character_condition(
+    character_id: int,
+    condition_id: int,
+    db: Session = Depends(get_db),
+):
+    require_character(character_id, db)
+    condition = require_condition(character_id, condition_id, db)
+    db.delete(condition)
+    db.commit()
+    return {"message": "Condition deleted"}
+
+
+@app.get(
+    "/characters/{character_id}/attacks",
+    response_model=list[AttackCheckResponse],
+)
+def get_attack_checks(character_id: int, db: Session = Depends(get_db)):
+    require_character(character_id, db)
+    return (
+        db.query(attack_check)
+        .filter(attack_check.character_id == character_id)
+        .order_by(attack_check.id)
+        .all()
+    )
+
+
+@app.post(
+    "/characters/{character_id}/attacks",
+    response_model=AttackCheckResponse,
+)
+def create_attack_check(
+    character_id: int,
+    data: AttackCheckInput,
+    db: Session = Depends(get_db),
+):
+    require_character(character_id, db)
+    attack = attack_check(
+        character_id=character_id,
+        attack_type=validate_attack_type(data.attack_type),
+        name=normalize_attack_name(data.name),
+        bonus=data.bonus,
+    )
+    db.add(attack)
+    db.commit()
+    db.refresh(attack)
+    return attack
+
+
+@app.patch(
+    "/characters/{character_id}/attacks/{attack_id}",
+    response_model=AttackCheckResponse,
+)
+def update_attack_check(
+    character_id: int,
+    attack_id: int,
+    data: AttackCheckUpdate,
+    db: Session = Depends(get_db),
+):
+    require_character(character_id, db)
+    attack = require_attack_check(character_id, attack_id, db)
+
+    if "attack_type" in data.model_fields_set:
+        attack.attack_type = validate_attack_type(data.attack_type or "")
+
+    if "name" in data.model_fields_set:
+        attack.name = normalize_attack_name(data.name or "")
+
+    if "bonus" in data.model_fields_set:
+        if data.bonus is None:
+            raise HTTPException(status_code=400, detail="Attack bonus is required")
+        attack.bonus = data.bonus
+
+    db.commit()
+    db.refresh(attack)
+    return attack
+
+
+@app.delete("/characters/{character_id}/attacks/{attack_id}")
+def delete_attack_check(
+    character_id: int,
+    attack_id: int,
+    db: Session = Depends(get_db),
+):
+    require_character(character_id, db)
+    attack = require_attack_check(character_id, attack_id, db)
+    db.delete(attack)
+    db.commit()
+    return {"message": "Attack check deleted"}
+
+
 @app.delete("/characters/{character_id}")
 def delete_character(character_id: int, db: Session = Depends(get_db)):
     char = require_character(character_id, db)
 
     db.query(inventory_item).filter(inventory_item.character_id == character_id).delete()
+    db.query(character_condition).filter(character_condition.character_id == character_id).delete()
+    db.query(attack_check).filter(attack_check.character_id == character_id).delete()
     db.query(initiative).filter(initiative.character_id == character_id).delete()
     db.delete(char)
     db.commit()
