@@ -90,6 +90,39 @@ const ATTACK_TYPES = [
     {value: "spell", label: "Проверка заклинания"},
     {value: "special", label: "Особое"},
 ];
+const OMEN_OPTIONS = [
+    {value: "", label: "Знамения Нет", effect: ""},
+    {value: "grim_winter", label: "Суровая зима", effect: "Все броски атаки"},
+    {value: "bull", label: "Бык", effect: "Броски атаки оружием ближнего боя"},
+    {value: "lucky_day", label: "Удачный день", effect: "Броски атаки оружием дальнего боя"},
+    {value: "raised_by_wolves", label: "Выращен волками", effect: "Броски атаки без оружия"},
+    {value: "born_on_horseback", label: "Рожденный верхом", effect: "Броски атаки верхом"},
+    {value: "battlefield_birth", label: "Родился на поле боя", effect: "Бросок урона"},
+    {value: "bear_path", label: "Путь медведя", effect: "Бросок урона оружием ближнего боя"},
+    {value: "hawk_eye", label: "Ястребиный глаз", effect: "Броски урона оружием дальнего боя"},
+    {value: "hunter_band", label: "Банда охотников", effect: "Броски атаки и урона для оружия 0 уровня"},
+    {value: "loom_born", label: "Рожденный под ткацким станком", effect: "Проверка навыков"},
+    {value: "fox_cunning", label: "Хитрость Лиса", effect: "Найти/отключить ловушки"},
+    {value: "four_leaf_clover", label: "Четырехлистный клевер", effect: "Найти секретные двери"},
+    {value: "seventh_son", label: "Седьмой сын", effect: "Проверка творения заклинания"},
+    {value: "raging_storm", label: "Бушующий шторм", effect: "Урон от заклинаний"},
+    {value: "righteous_heart", label: "Праведное сердце", effect: "Изгнание нечестивцев"},
+    {value: "plague_survivor", label: "Выживший во время чумы", effect: "Волшебное исцеление"},
+    {value: "lucky_sign", label: "Счастливый знак", effect: "Спасброски"},
+    {value: "guardian_angel", label: "Ангел-хранитель", effect: "Спасброски от ловушек"},
+    {value: "spider_bite", label: "Пережил укус паука", effect: "Спасброски против яда"},
+    {value: "lightning_strike", label: "Удар молнии", effect: "Спасброски реакции"},
+    {value: "starving", label: "Живущий впроголодь", effect: "Спасброски стойкости"},
+    {value: "temptation_resistance", label: "Сопротивление искушению", effect: "Спасброски воли"},
+    {value: "charmed_house", label: "Зачарованный Дом", effect: "Класс брони"},
+    {value: "cobra_speed", label: "Скорость кобры", effect: "Инициатива"},
+    {value: "bountiful_harvest", label: "Обильный урожай", effect: "Очки здоровья на каждом уровне"},
+    {value: "warrior_hand", label: "Рука воина", effect: "Таблица критического удара"},
+    {value: "unholy_house", label: "Нечестивый дом", effect: "Броски искажения"},
+    {value: "broken_star", label: "Сломанная звезда", effect: "Неуклюжесть"},
+    {value: "birdsong", label: "Пение птиц", effect: "Количество языков"},
+    {value: "wild_child", label: "Дикий ребенок", effect: "Скорость"},
+];
 const WARRIOR_LOAD_CLASSES = ["Воин", "Дварф"];
 const WIZARD_CLASSES = ["Маг", "Волшебник"];
 const CLERIC_CLASSES = ["Жрец"];
@@ -145,6 +178,7 @@ const elements = {
     playerName: document.getElementById("player-name"),
     playerSummary: document.getElementById("player-summary"),
     playerLoadStatus: document.getElementById("player-load-status"),
+    playerOmen: document.getElementById("player-omen"),
     playerNotes: document.getElementById("player-notes"),
     playerBagGrid: document.getElementById("player-bag-grid"),
     playerInventoryList: document.getElementById("player-inventory-list"),
@@ -205,6 +239,41 @@ function attackTypeLabel(type) {
     return ATTACK_TYPES.find((item) => item.value === type)?.label || type;
 }
 
+function omenOption(value) {
+    return OMEN_OPTIONS.find((item) => item.value === value) || OMEN_OPTIONS[0];
+}
+
+function omenValue(character) {
+    return character?.omen_key ? Number(character.omen_value || 0) : 0;
+}
+
+function attackOmenModifier(character, attackType) {
+    const key = character?.omen_key || "";
+    const value = omenValue(character);
+
+    if (key === "grim_winter" && ["melee", "ranged"].includes(attackType)) return value;
+    if (key === "bull" && attackType === "melee") return value;
+    if (key === "lucky_day" && attackType === "ranged") return value;
+    if (key === "hunter_band" && ["melee", "ranged"].includes(attackType)) return value;
+    if (key === "seventh_son" && attackType === "spell") return value;
+    return 0;
+}
+
+function saveOmenModifier(character, saveField) {
+    const key = character?.omen_key || "";
+    const value = omenValue(character);
+
+    if (key === "lucky_sign") return value;
+    if (key === "lightning_strike" && saveField === "reflex_save") return value;
+    if (key === "starving" && saveField === "fortitude_save") return value;
+    if (key === "temptation_resistance" && saveField === "will_save") return value;
+    return 0;
+}
+
+function speedOmenModifier(character) {
+    return character?.omen_key === "wild_child" ? omenValue(character) * 5 : 0;
+}
+
 function optionList(options, selectedValue) {
     return options.map((option) => `
         <option value="${option.value}" ${option.value === selectedValue ? "selected" : ""}>${option.label}</option>
@@ -228,7 +297,8 @@ function classSaveBonus(character, saveField) {
 }
 
 function saveDisplayValue(character, effective, saveField) {
-    if (Number(character.level || 0) <= 0) return 0;
+    const omen = saveOmenModifier(effective, saveField);
+    if (Number(character.level || 0) <= 0) return omen;
 
     const serverTotal = Number(character[`${saveField}_total`]);
     const stat = SAVE_STAT_FIELDS[saveField];
@@ -237,12 +307,13 @@ function saveDisplayValue(character, effective, saveField) {
         const saveShift = Number(effective[saveField] ?? 0) - Number(character[saveField] ?? 0);
         const statShift = abilityModifier(Number(effective[`current_${stat}`] ?? 0))
             - abilityModifier(Number(character[`current_${stat}`] ?? 0));
-        return serverTotal + saveShift + statShift;
+        return serverTotal + saveShift + statShift + omen;
     }
 
     return Number(effective[saveField] ?? 0)
         + abilityModifier(Number(effective[`current_${stat}`] ?? 0))
-        + classSaveBonus(character, saveField);
+        + classSaveBonus(character, saveField)
+        + omen;
 }
 
 function effectiveCharacter(character, conditions = []) {
@@ -287,6 +358,7 @@ function featDie(character) {
 
 function attackModifierParts(character, attack) {
     const bonus = Number(attack.bonus || 0);
+    const omen = attackOmenModifier(character, attack.attack_type);
     let total = bonus;
     let die = null;
 
@@ -308,10 +380,13 @@ function attackModifierParts(character, attack) {
         total += abilityModifier(Number(character.current_INT ?? character.INT)) + Number(character.level || 0);
     }
 
+    total += omen;
+
     return {
         total,
         label: die ? `${formatSigned(total)} + ${die}` : formatSigned(total),
         die,
+        omen,
     };
 }
 
@@ -357,7 +432,7 @@ function loadSummary(character, items) {
 
 function effectiveSpeed(character, items = []) {
     const summary = loadSummary(character, items);
-    return Math.max(0, Number(character.base_speed ?? characterBaseSpeed(character)) - summary.speedPenalty);
+    return Math.max(0, Number(character.base_speed ?? characterBaseSpeed(character)) - summary.speedPenalty + speedOmenModifier(character));
 }
 
 function renderLoadStatus(character, items) {
@@ -394,6 +469,14 @@ function xpRange(character) {
     return {xp, level, current, next, progress};
 }
 
+function hpRange(character) {
+    const current = Number(character.current_hp || 0);
+    const maximum = Math.max(1, Number(character.max_hp || 1));
+    const progress = Math.max(0, Math.min(100, (current / maximum) * 100));
+
+    return {current, maximum, progress};
+}
+
 function renderXPBlock(character, actionLocation) {
     const range = xpRange(character);
 
@@ -414,14 +497,40 @@ function renderXPBlock(character, actionLocation) {
 
 function renderCharacterCoreBlock(character, actionLocation, conditions = [], items = []) {
     const effective = effectiveCharacter(character, conditions);
+    const hp = hpRange(character);
     const hpText = effective.max_hp === character.max_hp
-        ? `${character.current_hp}/${character.max_hp}`
-        : `${effective.current_hp}/${effective.max_hp} (${character.current_hp}/${character.max_hp})`;
+        ? `${hp.current}/${hp.maximum} HP`
+        : `${effective.current_hp}/${effective.max_hp} HP (${hp.current}/${hp.maximum})`;
+    const playerActions = actionLocation === "player"
+        ? `
+            <div class="core-actions">
+                <button class="small-button" data-player-action="sheet" data-id="${character.id}">✎ Изм Лист</button>
+                <button class="small-button" data-player-action="change-character">Сменить</button>
+            </div>
+        `
+        : "";
 
     return `
         <section class="summary-card summary-main">
-            <div class="character-subtitle">${escapeHtml(character.clas)} ${character.level} уровня</div>
-            <div class="hp-line">HP: ${hpText}</div>
+            <div class="core-header">
+                <div class="character-subtitle">${escapeHtml(character.clas)} ${character.level} уровня</div>
+                ${playerActions}
+            </div>
+            <div class="hp-block">
+                <div class="xp-meta">
+                    <span>0</span>
+                    <strong>${hpText}</strong>
+                    <span>${hp.maximum}</span>
+                </div>
+                <div class="xp-track" aria-label="HP">
+                    <div class="xp-fill hp-fill" style="width: ${hp.progress}%"></div>
+                </div>
+                <div class="counter-controls">
+                    <button class="small-button" data-hp-action="delta" data-id="${character.id}" data-delta="-1" data-location="${actionLocation}">-</button>
+                    <input class="compact-number" type="number" min="0" value="1" data-hp-step="${character.id}" aria-label="Шаг HP">
+                    <button class="small-button" data-hp-action="delta" data-id="${character.id}" data-delta="1" data-location="${actionLocation}">+</button>
+                </div>
+            </div>
             <div class="summary-muted">Скорость ${effectiveSpeed(effective, items)}</div>
             ${renderXPBlock(character, actionLocation)}
         </section>
@@ -507,7 +616,7 @@ function renderAttacksBlock(character, attacks, actionLocation) {
                             <div>
                                 <strong>${escapeHtml(attack.name)}</strong>
                                 <span>${attackTypeLabel(attack.attack_type)}: ${modifier.label}</span>
-                                <em>Доп. ${formatSigned(attack.bonus)}${modifier.die ? `, куб подвига ${modifier.die}` : ""}</em>
+                                <em>Доп. ${formatSigned(attack.bonus)}${modifier.die ? `, куб подвига ${modifier.die}` : ""}${modifier.omen ? `, знамение ${formatSigned(modifier.omen)}` : ""}</em>
                             </div>
                             <div class="entry-actions">
                                 <button class="small-button" title="Редактировать" data-attack-action="toggle" data-form-id="${attack.id}">✎</button>
@@ -518,6 +627,120 @@ function renderAttacksBlock(character, attacks, actionLocation) {
                     `;
                 }).join("")}
             </div>
+        </section>
+    `;
+}
+
+function renderConsumableForm(characterId, consumable = null, actionLocation = "player") {
+    const formId = consumable ? String(consumable.id) : "add";
+    const action = consumable ? "save" : "create";
+    const hasNoMax = consumable ? consumable.max_value === null || consumable.max_value === undefined : false;
+
+    return `
+        <div class="inline-form consumable-form hidden" data-consumable-form="${formId}">
+            <input data-consumable-input="name" value="${escapeHtml(consumable?.name || "")}" placeholder="Название" required>
+            <input data-consumable-input="max_value" type="number" min="1" value="${consumable?.max_value ?? ""}" placeholder="Максимум" ${hasNoMax ? "disabled" : ""}>
+            <label class="check-row">
+                <input data-consumable-input="no_max" type="checkbox" ${hasNoMax ? "checked" : ""}>
+                Без максимума
+            </label>
+            <button data-consumable-action="${action}" data-id="${characterId}" data-consumable-id="${consumable?.id || ""}" data-location="${actionLocation}">Подтвердить</button>
+        </div>
+    `;
+}
+
+function renderConsumableControls(character, consumable, actionLocation) {
+    const maxValue = consumable.max_value;
+    const currentValue = Number(consumable.current_value || 0);
+
+    if (maxValue !== null && maxValue !== undefined) {
+        const progress = Math.max(0, Math.min(100, (currentValue / Math.max(1, Number(maxValue))) * 100));
+        return `
+            <div class="consumable-meter">
+                <div class="xp-meta">
+                    <span>0</span>
+                    <strong>${currentValue}/${maxValue}</strong>
+                    <span>${maxValue}</span>
+                </div>
+                <div class="xp-track" aria-label="${escapeHtml(consumable.name)}">
+                    <div class="xp-fill" style="width: ${progress}%"></div>
+                </div>
+            </div>
+            <div class="counter-controls">
+                <button class="small-button" data-consumable-action="delta" data-id="${character.id}" data-consumable-id="${consumable.id}" data-delta="-1" data-location="${actionLocation}">-</button>
+                <input class="compact-number" type="number" min="0" value="1" data-consumable-step="${consumable.id}" aria-label="Шаг">
+                <button class="small-button" data-consumable-action="delta" data-id="${character.id}" data-consumable-id="${consumable.id}" data-delta="1" data-location="${actionLocation}">+</button>
+            </div>
+        `;
+    }
+
+    return `
+        <div class="counter-controls">
+            <input class="compact-number current-value" type="number" min="0" value="${currentValue}" data-consumable-current="${consumable.id}" data-id="${character.id}" data-location="${actionLocation}" aria-label="Текущее значение">
+            <button class="small-button" data-consumable-action="delta" data-id="${character.id}" data-consumable-id="${consumable.id}" data-delta="-1" data-location="${actionLocation}">-</button>
+            <input class="compact-number" type="number" min="0" value="1" data-consumable-step="${consumable.id}" aria-label="Шаг">
+            <button class="small-button" data-consumable-action="delta" data-id="${character.id}" data-consumable-id="${consumable.id}" data-delta="1" data-location="${actionLocation}">+</button>
+        </div>
+    `;
+}
+
+function renderConsumablesBlock(character, consumables, actionLocation) {
+    return `
+        <section class="summary-card summary-wide" data-consumable-panel>
+            <div class="row">
+                <h3>Расходники</h3>
+                <button class="small-button" data-consumable-action="toggle" data-form-id="add">+</button>
+            </div>
+            ${renderConsumableForm(character.id, null, actionLocation)}
+            <div class="condition-list">
+                ${consumables.length === 0 ? `<p class="muted">Расходников пока нет.</p>` : ""}
+                ${consumables.map((consumable) => `
+                    <div class="condition-row consumable-row">
+                        <div>
+                            <strong>${escapeHtml(consumable.name)}</strong>
+                            ${renderConsumableControls(character, consumable, actionLocation)}
+                        </div>
+                        <div class="entry-actions">
+                            <button class="small-button" title="Редактировать" data-consumable-action="toggle" data-form-id="${consumable.id}">✎</button>
+                            <button data-consumable-action="delete" data-id="${character.id}" data-consumable-id="${consumable.id}" data-location="${actionLocation}">Убрать</button>
+                        </div>
+                    </div>
+                    ${renderConsumableForm(character.id, consumable, actionLocation)}
+                `).join("")}
+            </div>
+        </section>
+    `;
+}
+
+function renderOmenForm(character, actionLocation) {
+    return `
+        <div class="inline-form omen-form hidden" data-omen-form="edit">
+            <select data-omen-input="omen_key">
+                ${optionList(OMEN_OPTIONS, character.omen_key || "")}
+            </select>
+            <input data-omen-input="omen_value" type="number" value="${character.omen_value ?? 0}" placeholder="Значение">
+            <button data-omen-action="save" data-id="${character.id}" data-location="${actionLocation}">Подтвердить</button>
+        </div>
+    `;
+}
+
+function renderOmenBlock(character, actionLocation) {
+    const option = omenOption(character.omen_key || "");
+    const hasOmen = Boolean(character.omen_key);
+    const valueText = hasOmen ? ` ${formatSigned(character.omen_value)}` : "";
+    const effectText = hasOmen && option.effect ? `<em>${escapeHtml(option.effect)}</em>` : "";
+
+    return `
+        <section class="omen-block" data-omen-panel>
+            <div class="row">
+                <h3>Знамение</h3>
+                <button class="small-button" title="Редактировать" data-omen-action="toggle">✎</button>
+            </div>
+            <div class="omen-display">
+                <strong>${escapeHtml(option.label)}${valueText}</strong>
+                ${effectText}
+            </div>
+            ${renderOmenForm(character, actionLocation)}
         </section>
     `;
 }
@@ -588,7 +811,7 @@ function currentVisibleViewName() {
 }
 
 function hasOpenInlineEditor() {
-    return Boolean(document.querySelector("[data-condition-form]:not(.hidden), [data-attack-form]:not(.hidden)"));
+    return Boolean(document.querySelector("[data-condition-form]:not(.hidden), [data-attack-form]:not(.hidden), [data-consumable-form]:not(.hidden), [data-omen-form]:not(.hidden)"));
 }
 
 async function api(path, options = {}) {
@@ -784,10 +1007,11 @@ async function renderPlayerView(force = false) {
     }
     elements.playerEndTurnButton.disabled = !initiativeEntry?.is_current;
 
-    const [items, conditions, attacks] = await Promise.all([
+    const [items, conditions, attacks, consumables] = await Promise.all([
         loadInventory(character.id),
         loadConditions(character.id),
         loadAttacks(character.id),
+        loadConsumables(character.id),
     ]);
     const effective = effectiveCharacter(character, conditions);
     elements.playerSummary.innerHTML = `
@@ -795,6 +1019,7 @@ async function renderPlayerView(force = false) {
             ${renderCharacterCoreBlock(character, "player", conditions, items)}
             ${renderConditionsBlock(character, conditions, "player")}
             ${renderAttacksBlock(effective, attacks, "player")}
+            ${renderConsumablesBlock(effective, consumables, "player")}
             <section class="summary-card">
                 <h3>Характеристики</h3>
                 <div class="compact-stat-grid">
@@ -821,6 +1046,9 @@ async function renderPlayerView(force = false) {
         </div>
     `;
     elements.playerLoadStatus.textContent = renderLoadStatus(effective, items);
+    if (elements.playerOmen) {
+        elements.playerOmen.innerHTML = renderOmenBlock(character, "player");
+    }
     if (document.activeElement !== elements.playerNotes) {
         elements.playerNotes.value = character.notes || "";
         autoSizeTextarea(elements.playerNotes);
@@ -1061,10 +1289,11 @@ async function openSheet(characterId) {
     activeSheetCharacterId = character.id;
     elements.sheetTitle.textContent = `Изменить персонажа: ${character.name}`;
 
-    const [items, conditions, attacks] = await Promise.all([
+    const [items, conditions, attacks, consumables] = await Promise.all([
         loadInventory(character.id),
         loadConditions(character.id),
         loadAttacks(character.id),
+        loadConsumables(character.id),
     ]);
     const effective = effectiveCharacter(character, conditions);
     const hpText = effective.max_hp === character.max_hp
@@ -1100,6 +1329,7 @@ async function openSheet(characterId) {
             </section>
             ${renderConditionsBlock(character, conditions, "sheet")}
             ${renderAttacksBlock(effective, attacks, "sheet")}
+            ${renderConsumablesBlock(effective, consumables, "sheet")}
             <section>
                 <h3>Статы</h3>
                 ${STATS.map((stat) => `
@@ -1150,6 +1380,9 @@ async function openSheet(characterId) {
                 </div>
             </div>
         </section>
+        <section class="panel">
+            ${renderOmenBlock(character, "sheet")}
+        </section>
     `;
 
     renderInventory(
@@ -1161,7 +1394,7 @@ async function openSheet(characterId) {
     showOnly("sheetView");
 }
 
-async function updateCharacterHP(characterId, delta) {
+async function updateCharacterHP(characterId, delta, location = "sheet") {
     const character = characters.find((item) => item.id === Number(characterId));
     if (!character) return;
 
@@ -1171,7 +1404,12 @@ async function updateCharacterHP(characterId, delta) {
     });
 
     await loadCharacters();
-    await openSheet(character.id);
+    if (location === "sheet" || activeSheetCharacterId === character.id) {
+        await openSheet(character.id);
+        return;
+    }
+
+    await renderPlayerView(true);
 }
 
 async function updateCharacterMaxHP(characterId) {
@@ -1324,6 +1562,10 @@ async function loadAttacks(characterId) {
     return api(`/characters/${characterId}/attacks`);
 }
 
+async function loadConsumables(characterId) {
+    return api(`/characters/${characterId}/consumables`);
+}
+
 async function refreshCharacterSurface(characterId, location = null) {
     await loadCharacters();
     const visible = currentVisibleViewName();
@@ -1446,6 +1688,117 @@ async function handleAttackAction(button) {
         });
         await refreshCharacterSurface(characterId);
     }
+}
+
+function readConsumableForm(form) {
+    const name = form.querySelector('[data-consumable-input="name"]').value.trim();
+    const noMax = form.querySelector('[data-consumable-input="no_max"]').checked;
+    const maxInput = form.querySelector('[data-consumable-input="max_value"]');
+    const maxValue = noMax ? null : Number(maxInput.value);
+
+    if (!name || (!noMax && (Number.isNaN(maxValue) || maxValue < 1))) return null;
+
+    return {
+        name,
+        max_value: maxValue,
+    };
+}
+
+async function updateConsumableValue(characterId, consumableId, currentValue, location) {
+    await api(`/characters/${characterId}/consumables/${consumableId}`, {
+        method: "PATCH",
+        body: JSON.stringify({current_value: currentValue}),
+    });
+    await refreshCharacterSurface(characterId, location);
+}
+
+async function handleConsumableAction(button) {
+    const action = button.dataset.consumableAction;
+
+    if (action === "toggle") {
+        const form = findInlineForm(button, "consumable");
+        if (form) form.classList.toggle("hidden");
+        return;
+    }
+
+    const characterId = Number(button.dataset.id);
+    if (!characterId) return;
+
+    if (action === "delete") {
+        await api(`/characters/${characterId}/consumables/${button.dataset.consumableId}`, {method: "DELETE"});
+        await refreshCharacterSurface(characterId, button.dataset.location);
+        return;
+    }
+
+    if (action === "delta") {
+        const consumableId = Number(button.dataset.consumableId);
+        const current = await loadConsumables(characterId);
+        const consumable = current.find((item) => item.id === consumableId);
+        if (!consumable) return;
+
+        const stepInput = document.querySelector(`[data-consumable-step="${consumableId}"]`);
+        const step = Math.max(0, Number(stepInput?.value || 1));
+        const delta = Number(button.dataset.delta || 0) * (Number.isNaN(step) ? 1 : step);
+        await updateConsumableValue(characterId, consumableId, Number(consumable.current_value || 0) + delta, button.dataset.location);
+        return;
+    }
+
+    if (action === "create" || action === "save") {
+        const form = button.closest("[data-consumable-form]");
+        if (!form) return;
+
+        const data = readConsumableForm(form);
+        if (!data) return;
+
+        const consumableId = button.dataset.consumableId;
+        const path = action === "save"
+            ? `/characters/${characterId}/consumables/${consumableId}`
+            : `/characters/${characterId}/consumables`;
+
+        await api(path, {
+            method: action === "save" ? "PATCH" : "POST",
+            body: JSON.stringify(data),
+        });
+        await refreshCharacterSurface(characterId, button.dataset.location);
+    }
+}
+
+function readOmenForm(form) {
+    const omenKey = form.querySelector('[data-omen-input="omen_key"]').value;
+    const omenValue = Number(form.querySelector('[data-omen-input="omen_value"]').value || 0);
+
+    if (Number.isNaN(omenValue)) return null;
+
+    return {
+        omen_key: omenKey,
+        omen_value: omenKey ? omenValue : 0,
+    };
+}
+
+async function handleOmenAction(button) {
+    const action = button.dataset.omenAction;
+    const panel = button.closest("[data-omen-panel]");
+
+    if (action === "toggle") {
+        const form = panel?.querySelector("[data-omen-form]");
+        if (form) form.classList.toggle("hidden");
+        return;
+    }
+
+    if (action !== "save") return;
+
+    const characterId = Number(button.dataset.id);
+    const form = panel?.querySelector("[data-omen-form]");
+    if (!characterId || !form) return;
+
+    const data = readOmenForm(form);
+    if (!data) return;
+
+    await api(`/characters/${characterId}/omen`, {
+        method: "PATCH",
+        body: JSON.stringify(data),
+    });
+    await refreshCharacterSurface(characterId, button.dataset.location);
 }
 
 async function loadCampBuildings() {
@@ -1877,16 +2230,6 @@ document.getElementById("next-turn-button").addEventListener("click", nextTurn);
 document.getElementById("clear-button").addEventListener("click", clearInitiative);
 elements.playerEndTurnButton.addEventListener("click", nextTurn);
 
-document.getElementById("open-player-sheet-button").addEventListener("click", () => {
-    openSheet(playerCharacterId);
-});
-
-document.getElementById("change-player-character-button").addEventListener("click", () => {
-    playerCharacterId = null;
-    localStorage.removeItem("dcc_character_id");
-    renderCurrentRole();
-});
-
 document.getElementById("open-master-sheet-button").addEventListener("click", () => {
     openSheet(elements.masterSheetSelect.value);
 });
@@ -1984,8 +2327,41 @@ elements.placementGrid.addEventListener("click", async (event) => {
 });
 
 document.addEventListener("click", (event) => {
+    const playerButton = event.target.closest("[data-player-action]");
+    if (playerButton) {
+        if (playerButton.dataset.playerAction === "sheet") {
+            openSheet(Number(playerButton.dataset.id));
+        }
+        if (playerButton.dataset.playerAction === "change-character") {
+            playerCharacterId = null;
+            localStorage.removeItem("dcc_character_id");
+            renderCurrentRole();
+        }
+        return;
+    }
+
+    const hpButton = event.target.closest("[data-hp-action]");
+    if (hpButton) {
+        const stepInput = hpButton.parentElement?.querySelector(
+            `[data-hp-step="${hpButton.dataset.id}"]`
+        );
+        const step = Math.max(1, Number(stepInput?.value || 1));
+        const delta = Number(hpButton.dataset.delta || 0) * step;
+        if (delta) {
+            updateCharacterHP(
+                Number(hpButton.dataset.id),
+                delta,
+                hpButton.dataset.location || "player"
+            );
+        }
+        return;
+    }
+
     const button = event.target.closest("[data-inventory-action]");
-    if (button) handleInventoryAction(button);
+    if (button) {
+        handleInventoryAction(button);
+        return;
+    }
 
     const conditionButton = event.target.closest("[data-condition-action]");
     if (conditionButton) {
@@ -1996,6 +2372,18 @@ document.addEventListener("click", (event) => {
     const attackButton = event.target.closest("[data-attack-action]");
     if (attackButton) {
         handleAttackAction(attackButton);
+        return;
+    }
+
+    const consumableButton = event.target.closest("[data-consumable-action]");
+    if (consumableButton) {
+        handleConsumableAction(consumableButton);
+        return;
+    }
+
+    const omenButton = event.target.closest("[data-omen-action]");
+    if (omenButton) {
+        handleOmenAction(omenButton);
         return;
     }
 
@@ -2025,6 +2413,25 @@ document.addEventListener("click", (event) => {
         if (profileButton.dataset.profileAction === "delete") {
             deletePlayerProfile(profileId);
         }
+    }
+});
+
+document.addEventListener("change", (event) => {
+    const noMaxInput = event.target.closest('[data-consumable-input="no_max"]');
+    if (noMaxInput) {
+        const form = noMaxInput.closest("[data-consumable-form]");
+        const maxInput = form?.querySelector('[data-consumable-input="max_value"]');
+        if (maxInput) maxInput.disabled = noMaxInput.checked;
+        return;
+    }
+
+    const currentInput = event.target.closest("[data-consumable-current]");
+    if (currentInput) {
+        const characterId = Number(currentInput.dataset.id);
+        const consumableId = Number(currentInput.dataset.consumableCurrent);
+        const value = Number(currentInput.value);
+        if (!characterId || !consumableId || Number.isNaN(value)) return;
+        updateConsumableValue(characterId, consumableId, value, currentInput.dataset.location);
     }
 });
 

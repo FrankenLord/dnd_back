@@ -1,0 +1,414 @@
+DCC Initiative backend: инструкция для стажера
+=============================================
+
+1. Что это за проект
+--------------------
+Это локальное веб-приложение для DCC/DnD-игры. Backend написан на FastAPI, хранит данные в PostgreSQL через SQLAlchemy и отдает frontend из папки front.
+
+Основная задача backend:
+- хранить персонажей, монстров, инициативу, инвентарь, состояния, атаки, расходуемые ресурсы, лагерь и профили игроков;
+- принимать HTTP-запросы от front/script.js;
+- возвращать JSON, который frontend сразу рендерит на странице.
+
+
+2. Главные файлы
+----------------
+database.py
+    Подключение к базе данных.
+    DATABASE_URL указывает на PostgreSQL:
+    postgresql://postgres:frend2000@localhost:5432/dnd_db
+
+    engine - объект SQLAlchemy для соединения с БД.
+    SessionLocal - фабрика сессий, через нее каждый API-запрос получает db.
+    Base - базовый класс для всех моделей из models.py.
+
+models.py
+    SQLAlchemy-модели таблиц.
+    Здесь описано, какие таблицы есть в базе и какие поля у каждой таблицы.
+    Также есть функции расчета модификаторов и спасбросков персонажа.
+
+main.py
+    Главный файл FastAPI.
+    Здесь создается app, подключается CORS, создаются таблицы, описываются Pydantic-схемы, helper-функции и все API-маршруты.
+    В конце main.py backend отдает frontend:
+    app.mount("/", StaticFiles(directory=front_dir, html=True), name="front")
+
+front/index.html
+    HTML-разметка интерфейса.
+
+front/script.js
+    Весь клиентский JavaScript. Он вызывает API из main.py через fetch и обновляет страницу.
+
+front/style.css
+    Стили интерфейса.
+
+
+3. Как запускается проект
+-------------------------
+1. Должен быть запущен PostgreSQL.
+2. В PostgreSQL должна существовать база dnd_db.
+3. Запуск backend:
+   python -m uvicorn main:app --host 0.0.0.0 --port 8000
+
+После запуска:
+- http://127.0.0.1:8000 открывает интерфейс;
+- http://127.0.0.1:8000/api/health проверяет, что backend жив.
+
+
+4. Как запрос попадает в backend
+--------------------------------
+Frontend вызывает функцию api(path, options) в front/script.js.
+Например, кнопка "Добавить монстра" вызывает:
+POST /initiative/monster
+
+Дальше FastAPI в main.py находит маршрут:
+@app.post("/initiative/monster")
+
+Функция получает данные, валидирует их через Pydantic-схему, работает с db-сессией, сохраняет изменения и возвращает JSON.
+
+
+5. Сессия базы данных
+---------------------
+В main.py есть функция get_db().
+Она создает db = SessionLocal(), отдает ее API-функции через Depends(get_db), а после запроса закрывает соединение.
+
+Типичный маршрут выглядит так:
+def some_route(db: Session = Depends(get_db)):
+    ...
+
+Важно:
+- после создания, изменения или удаления данных нужен db.commit();
+- если надо вернуть свежий объект после insert/update, используется db.refresh(object);
+- если объект не найден, возвращаем HTTPException с 404.
+
+
+6. Таблицы и модели
+-------------------
+character
+    Персонаж игрока.
+    Основные поля:
+    id - идентификатор;
+    owner_profile_id - владелец-профиль игрока, может быть пустым;
+    name - имя;
+    clas - класс;
+    level, xp - уровень и опыт;
+    current_hp, max_hp - текущее и максимальное здоровье;
+    STR, DEX, CON, INT, WIS, LUC - максимальные характеристики;
+    current_STR, current_DEX, current_CON, current_INT, current_WIS, current_LUC - текущие характеристики;
+    reflex_save, fortitude_save, will_save - ручные бонусы спасбросков;
+    notes - заметки игрока;
+    base_speed - базовая скорость;
+    omen_key, omen_value - знамение и его бонус.
+
+    Свойства reflex_save_total, fortitude_save_total, will_save_total считают итоговые спасброски.
+
+monster
+    Монстр в инициативе.
+    base_name - базовое имя, например "Гоблин";
+    display_name - отображаемое имя, например "Гоблин 1";
+    current_hp, max_hp - здоровье.
+
+initiative
+    Порядок ходов.
+    character_id - ссылка на персонажа, если это персонаж;
+    monster_id - ссылка на монстра, если это монстр;
+    initiative - значение инициативы.
+
+inventory_item
+    Предмет в сумке персонажа.
+    shape - JSON со списком клеток формы предмета;
+    x, y - позиция предмета в сумке 4 на 7.
+
+character_condition
+    Состояние или болезнь персонажа.
+    target - на что влияет состояние: характеристика, спасбросок, HP, скорость или special;
+    value - величина штрафа;
+    treatment - способ лечения.
+
+attack_check
+    Настраиваемая проверка атаки или заклинания.
+    attack_type - melee, ranged, spell или special;
+    bonus - дополнительный модификатор.
+
+character_consumable
+    Расходуемый ресурс персонажа.
+    current_value - текущее значение;
+    max_value - максимум, может быть пустым.
+
+camp_building
+    Строение лагеря.
+    name - название;
+    notes - описание и заметки.
+
+player_profile
+    Профиль игрока.
+    login - логин;
+    password_hash и password_salt - пароль хранится не открытым текстом, а через PBKDF2-хэш.
+
+
+7. Pydantic-схемы в main.py
+---------------------------
+Pydantic-классы описывают входящие и исходящие JSON-данные.
+
+Примеры:
+CharacterCreate
+    Тело запроса для создания персонажа.
+
+CharacterResponse
+    JSON-ответ с персонажем. В него входят также вычисляемые поля спасбросков.
+
+InventoryItemInput
+    Тело запроса для создания предмета в сумке.
+
+PlayerProfileCreate
+    Тело запроса для создания профиля игрока.
+
+Зачем нужны схемы:
+- FastAPI проверяет типы автоматически;
+- frontend получает предсказуемый JSON;
+- ошибки входных данных превращаются в понятные HTTP-ответы.
+
+
+8. Основные helper-функции
+-------------------------
+clamp(value, minimum, maximum)
+    Ограничивает число диапазоном.
+    Используется для HP, характеристик и ресурсов.
+
+character_level(xp)
+    Считает уровень по XP_THRESHOLDS.
+
+require_character(character_id, db)
+    Достает персонажа из БД.
+    Если персонажа нет, бросает 404.
+
+hash_password(password), verify_password(...)
+    Хэширование и проверка паролей профилей игроков.
+
+normalize_shape(shape)
+    Нормализует форму предмета в сумке: убирает дубли и сдвигает форму к верхнему левому углу.
+
+validate_inventory_item(...)
+    Проверяет, что предмет помещается в сумку и не пересекается с другими предметами.
+
+normalize_condition_name, validate_condition_target
+    Подготовка и проверка состояний персонажа.
+
+normalize_attack_name, validate_attack_type
+    Подготовка и проверка атак.
+
+normalize_consumable_name, validate_consumable_max
+    Подготовка и проверка расходуемых ресурсов.
+
+
+9. Карта API
+------------
+Проверка сервера
+    GET /api/health
+
+Авторизация
+    POST /auth/master
+        Проверяет пароль мастера.
+
+    POST /auth/player
+        Проверяет логин и пароль игрока.
+
+Профили игроков
+    GET /player-profiles
+        Получить список профилей.
+
+    POST /player-profiles
+        Создать профиль.
+
+    PATCH /player-profiles/{profile_id}
+        Изменить логин или пароль.
+
+    DELETE /player-profiles/{profile_id}
+        Удалить профиль. Персонажи этого профиля становятся общими.
+
+Персонажи
+    GET /characters
+        Получить всех персонажей.
+
+    POST /characters/
+        Создать персонажа.
+
+    PATCH /characters/{character_id}/details
+        Изменить владельца, класс, максимум HP, максимальные характеристики или скорость.
+
+    PATCH /characters/{character_id}/hp
+        Изменить текущее HP.
+
+    PATCH /characters/{character_id}/stats
+        Изменить текущие характеристики.
+
+    POST /characters/{character_id}/xp
+        Добавить опыт и пересчитать уровень.
+
+    PATCH /characters/{character_id}/saves
+        Изменить ручные бонусы спасбросков.
+
+    PATCH /characters/{character_id}/notes
+        Сохранить заметки.
+
+    PATCH /characters/{character_id}/omen
+        Сохранить знамение.
+
+    DELETE /characters/{character_id}
+        Удалить персонажа и связанные с ним данные.
+
+Состояния персонажа
+    GET /characters/{character_id}/conditions
+    POST /characters/{character_id}/conditions
+    PATCH /characters/{character_id}/conditions/{condition_id}
+    DELETE /characters/{character_id}/conditions/{condition_id}
+
+Атаки и проверки
+    GET /characters/{character_id}/attacks
+    POST /characters/{character_id}/attacks
+    PATCH /characters/{character_id}/attacks/{attack_id}
+    DELETE /characters/{character_id}/attacks/{attack_id}
+
+Расходуемые ресурсы
+    GET /characters/{character_id}/consumables
+    POST /characters/{character_id}/consumables
+    PATCH /characters/{character_id}/consumables/{consumable_id}
+    DELETE /characters/{character_id}/consumables/{consumable_id}
+
+Инвентарь
+    GET /characters/{character_id}/inventory
+        Получить предметы персонажа.
+
+    POST /characters/{character_id}/inventory
+        Создать предмет.
+
+    PATCH /characters/{character_id}/inventory/{item_id}
+        Изменить предмет, форму или позицию.
+
+    DELETE /characters/{character_id}/inventory/{item_id}
+        Удалить предмет.
+
+Инициатива
+    GET /initiative
+        Получить текущий порядок ходов.
+
+    POST /initiative/add
+        Добавить или обновить персонажа в инициативе.
+
+    POST /initiative/monster
+        Создать монстра и добавить его в инициативу.
+
+    DELETE /initiative/clear
+        Очистить инициативу и удалить монстров.
+        Важно: этот маршрут должен быть объявлен раньше DELETE /initiative/{entry_id}, иначе FastAPI примет слово clear за entry_id.
+
+    PATCH /initiative/{entry_id}
+        Изменить значение инициативы записи.
+
+    DELETE /initiative/{entry_id}
+        Удалить одну запись инициативы. Если запись была монстром, монстр тоже удаляется.
+
+Монстры
+    PATCH /monsters/{monster_id}/hp
+        Изменить HP монстра.
+
+Ход
+    POST /turn/next
+        Передать ход следующему участнику.
+
+    GET /turn
+        Получить индекс текущего хода.
+
+Лагерь
+    GET /camp/buildings
+    POST /camp/buildings
+    PATCH /camp/buildings/{building_id}
+    DELETE /camp/buildings/{building_id}
+
+
+10. Важные сценарии
+-------------------
+Создание персонажа
+    frontend отправляет POST /characters/;
+    backend создает character;
+    current_hp становится равным max_hp;
+    current_STR/current_DEX/... копируются из максимальных характеристик;
+    base_speed зависит от класса.
+
+Добавление персонажа в инициативу
+    frontend отправляет POST /initiative/add;
+    если персонаж уже есть в инициативе, backend обновляет initiative;
+    если нет, создает новую запись.
+
+Добавление монстра
+    frontend отправляет POST /initiative/monster;
+    backend создает monster;
+    потом создает initiative с monster_id.
+
+Передача хода
+    frontend отправляет POST /turn/next;
+    backend увеличивает app.state.current_turn_index;
+    GET /initiative потом помечает is_current и is_next.
+
+Редактирование сумки
+    frontend отправляет форму предмета как shape;
+    backend нормализует shape;
+    validate_inventory_item проверяет границы сумки и пересечения;
+    shape хранится в БД как JSON-строка.
+
+Состояния персонажа
+    backend хранит только список состояний;
+    итоговые эффекты на характеристики считает frontend через effectiveCharacter.
+
+
+11. Частые ошибки
+-----------------
+1. Маршруты FastAPI важны по порядку.
+   Статический маршрут вроде /initiative/clear должен быть выше динамического /initiative/{entry_id}.
+
+2. Если кнопки на frontend перестали работать все сразу, сначала проверяй консоль браузера.
+   Частая причина: script.js делает document.getElementById(...).addEventListener(...), а такого id нет в index.html.
+
+3. После изменения данных почти всегда нужен db.commit().
+
+4. После db.add(...) и db.commit() часто нужен db.refresh(object), чтобы получить id и свежие поля.
+
+5. Нельзя хранить пароль открытым текстом.
+   В проекте используется hash_password и verify_password.
+
+6. При удалении персонажа надо удалять связанные данные:
+   inventory_item, character_condition, attack_check, character_consumable, initiative.
+
+7. Не меняй DATABASE_URL без понимания, где запущена PostgreSQL.
+
+
+12. Как быстро проверить backend после правок
+---------------------------------------------
+1. Проверить синтаксис:
+   python -m py_compile main.py models.py database.py
+
+2. Проверить импорт приложения:
+   python -c "import main; print('app ok')"
+
+3. Запустить сервер:
+   python -m uvicorn main:app --host 127.0.0.1 --port 8000
+
+4. Проверить health:
+   GET http://127.0.0.1:8000/api/health
+
+5. Проверить OpenAPI-документацию:
+   http://127.0.0.1:8000/docs
+
+
+13. Что смотреть стажеру в первую очередь
+-----------------------------------------
+1. database.py - понять, как подключается база.
+2. models.py - понять таблицы.
+3. main.py сверху вниз:
+   настройки app;
+   Pydantic-схемы;
+   helper-функции;
+   маршруты API.
+4. front/script.js - найти функцию api() и посмотреть, какие кнопки какие маршруты вызывают.
+
+Если понятно, как frontend-кнопка превращается в API-запрос, а API-запрос меняет SQLAlchemy-модель и делает db.commit(), то основная архитектура проекта уже понятна.

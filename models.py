@@ -117,6 +117,8 @@ class character(Base):
     will_save = Column(Integer, default=0)
     notes = Column(Text, default="")
     base_speed = Column(Integer, default=30)
+    omen_key = Column(String, default="")
+    omen_value = Column(Integer, default=0)
     initiative=Column(Integer, default=0) 
 
     @property
@@ -182,6 +184,15 @@ class attack_check(Base):
     attack_type = Column(String, nullable=False)
     name = Column(String, nullable=False, default="Проверка")
     bonus = Column(Integer, nullable=False, default=0)
+
+class character_consumable(Base):
+    __tablename__ = "character_consumables"
+
+    id = Column(Integer, primary_key=True)
+    character_id = Column(Integer, ForeignKey("characters.id"), nullable=False)
+    name = Column(String, nullable=False)
+    current_value = Column(Integer, nullable=False, default=0)
+    max_value = Column(Integer, nullable=True)
 
 class camp_building(Base):
     __tablename__ = "camp_buildings"

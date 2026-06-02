@@ -17,6 +17,7 @@ from models import (
     attack_check,
     camp_building,
     character,
+    character_consumable,
     character_condition,
     initiative,
     inventory_item,
@@ -66,6 +67,8 @@ def ensure_schema():
         "will_save": ("INTEGER DEFAULT 0", 0),
         "notes": ("TEXT DEFAULT ''", ""),
         "base_speed": ("INTEGER DEFAULT 30", 30),
+        "omen_key": ("VARCHAR DEFAULT ''", ""),
+        "omen_value": ("INTEGER DEFAULT 0", 0),
     }
 
     with engine.begin() as conn:
@@ -175,6 +178,11 @@ class CharacterNotesUpdate(BaseModel):
     notes: str = ""
 
 
+class CharacterOmenUpdate(BaseModel):
+    omen_key: str = ""
+    omen_value: int = 0
+
+
 class CharacterConditionInput(BaseModel):
     name: str = ""
     target: str
@@ -220,6 +228,26 @@ class AttackCheckResponse(BaseModel):
     bonus: int
 
 
+class CharacterConsumableInput(BaseModel):
+    name: str
+    max_value: int | None = None
+
+
+class CharacterConsumableUpdate(BaseModel):
+    name: str | None = None
+    current_value: int | None = None
+    max_value: int | None = None
+
+
+class CharacterConsumableResponse(BaseModel):
+    model_config = {"from_attributes": True}
+    id: int
+    character_id: int
+    name: str
+    current_value: int
+    max_value: int | None = None
+
+
 class CharacterResponse(BaseModel):
     model_config = {"from_attributes": True}
     id: int
@@ -250,6 +278,8 @@ class CharacterResponse(BaseModel):
     will_save_total: int
     notes: str
     base_speed: int
+    omen_key: str
+    omen_value: int
 
 
 class PlayerProfileCreate(BaseModel):
@@ -494,6 +524,29 @@ def normalize_attack_name(name: str) -> str:
     return name.strip() or "Проверка"
 
 
+def normalize_consumable_name(name: str) -> str:
+    name = name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Consumable name cannot be empty")
+    return name
+
+
+def validate_consumable_max(max_value: int | None) -> int | None:
+    if max_value is None:
+        return None
+    if max_value < 1:
+        raise HTTPException(status_code=400, detail="Consumable max must be at least 1")
+    return max_value
+
+
+def clamp_consumable_value(value: int, max_value: int | None) -> int:
+    if value < 0:
+        return 0
+    if max_value is None:
+        return value
+    return min(value, max_value)
+
+
 def validate_attack_type(attack_type: str) -> str:
     if attack_type not in ATTACK_TYPES:
         raise HTTPException(status_code=400, detail="Invalid attack type")
@@ -526,6 +579,20 @@ def require_attack_check(character_id: int, attack_id: int, db: Session):
     if not attack:
         raise HTTPException(status_code=404, detail="Attack check not found")
     return attack
+
+
+def require_consumable(character_id: int, consumable_id: int, db: Session):
+    consumable = (
+        db.query(character_consumable)
+        .filter(
+            character_consumable.id == consumable_id,
+            character_consumable.character_id == character_id,
+        )
+        .first()
+    )
+    if not consumable:
+        raise HTTPException(status_code=404, detail="Consumable not found")
+    return consumable
 
 
 @app.get("/api/health")
@@ -767,6 +834,20 @@ def update_character_notes(
     return char
 
 
+@app.patch("/characters/{character_id}/omen", response_model=CharacterResponse)
+def update_character_omen(
+    character_id: int,
+    data: CharacterOmenUpdate,
+    db: Session = Depends(get_db),
+):
+    char = require_character(character_id, db)
+    char.omen_key = data.omen_key.strip()
+    char.omen_value = data.omen_value if char.omen_key else 0
+    db.commit()
+    db.refresh(char)
+    return char
+
+
 @app.get(
     "/characters/{character_id}/conditions",
     response_model=list[CharacterConditionResponse],
@@ -927,6 +1008,92 @@ def delete_attack_check(
     return {"message": "Attack check deleted"}
 
 
+@app.get(
+    "/characters/{character_id}/consumables",
+    response_model=list[CharacterConsumableResponse],
+)
+def get_character_consumables(character_id: int, db: Session = Depends(get_db)):
+    require_character(character_id, db)
+    return (
+        db.query(character_consumable)
+        .filter(character_consumable.character_id == character_id)
+        .order_by(character_consumable.id)
+        .all()
+    )
+
+
+@app.post(
+    "/characters/{character_id}/consumables",
+    response_model=CharacterConsumableResponse,
+)
+def create_character_consumable(
+    character_id: int,
+    data: CharacterConsumableInput,
+    db: Session = Depends(get_db),
+):
+    require_character(character_id, db)
+    max_value = validate_consumable_max(data.max_value)
+    consumable = character_consumable(
+        character_id=character_id,
+        name=normalize_consumable_name(data.name),
+        current_value=0,
+        max_value=max_value,
+    )
+    db.add(consumable)
+    db.commit()
+    db.refresh(consumable)
+    return consumable
+
+
+@app.patch(
+    "/characters/{character_id}/consumables/{consumable_id}",
+    response_model=CharacterConsumableResponse,
+)
+def update_character_consumable(
+    character_id: int,
+    consumable_id: int,
+    data: CharacterConsumableUpdate,
+    db: Session = Depends(get_db),
+):
+    require_character(character_id, db)
+    consumable = require_consumable(character_id, consumable_id, db)
+
+    if "name" in data.model_fields_set:
+        consumable.name = normalize_consumable_name(data.name or "")
+
+    if "max_value" in data.model_fields_set:
+        consumable.max_value = validate_consumable_max(data.max_value)
+        consumable.current_value = clamp_consumable_value(
+            consumable.current_value,
+            consumable.max_value,
+        )
+
+    if "current_value" in data.model_fields_set:
+        if data.current_value is None:
+            raise HTTPException(status_code=400, detail="Consumable value is required")
+        consumable.current_value = clamp_consumable_value(
+            data.current_value,
+            consumable.max_value,
+        )
+
+    db.commit()
+    db.refresh(consumable)
+    return consumable
+
+
+@app.delete("/characters/{character_id}/consumables/{consumable_id}")
+def delete_character_consumable(
+    character_id: int,
+    consumable_id: int,
+    db: Session = Depends(get_db),
+):
+    require_character(character_id, db)
+    consumable = require_consumable(character_id, consumable_id, db)
+    db.delete(consumable)
+    db.commit()
+    return {"message": "Consumable deleted"}
+
+
 @app.delete("/characters/{character_id}")
 def delete_character(character_id: int, db: Session = Depends(get_db)):
     char = require_character(character_id, db)
@@ -934,6 +1101,7 @@ def delete_character(character_id: int, db: Session = Depends(get_db)):
     db.query(inventory_item).filter(inventory_item.character_id == character_id).delete()
     db.query(character_condition).filter(character_condition.character_id == character_id).delete()
     db.query(attack_check).filter(attack_check.character_id == character_id).delete()
+    db.query(character_consumable).filter(character_consumable.character_id == character_id).delete()
     db.query(initiative).filter(initiative.character_id == character_id).delete()
     db.delete(char)
     db.commit()
@@ -1144,6 +1312,15 @@ def get_initiative(db: Session = Depends(get_db)):
     return result
 
 
+@app.delete("/initiative/clear")
+def clear_initiative(db: Session = Depends(get_db)):
+    db.query(initiative).delete()
+    db.query(monster).delete()
+    db.commit()
+    app.state.current_turn_index = 0
+    return {"message": "Initiative cleared"}
+
+
 @app.patch("/initiative/{entry_id}")
 def update_initiative(
     entry_id: int,
@@ -1205,15 +1382,6 @@ def get_turn(db: Session = Depends(get_db)):
     total_entries = db.query(initiative).count()
     normalize_turn_index(total_entries)
     return {"current_turn_index": app.state.current_turn_index}
-
-
-@app.delete("/initiative/clear")
-def clear_initiative(db: Session = Depends(get_db)):
-    db.query(initiative).delete()
-    db.query(monster).delete()
-    db.commit()
-    app.state.current_turn_index = 0
-    return {"message": "Initiative cleared"}
 
 
 @app.get("/camp/buildings", response_model=list[CampBuildingResponse])

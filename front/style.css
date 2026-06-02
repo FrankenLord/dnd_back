@@ -361,6 +361,29 @@ h3 {
     grid-template-columns: minmax(140px, 1.1fr) minmax(150px, 1fr) minmax(120px, 0.7fr) minmax(160px, 1fr) auto;
 }
 
+.consumable-form,
+.omen-form {
+    grid-template-columns: minmax(180px, 1.2fr) minmax(140px, 0.7fr) minmax(150px, 0.8fr) auto;
+}
+
+.omen-form {
+    grid-template-columns: minmax(220px, 1fr) minmax(120px, 0.4fr) auto;
+}
+
+.check-row {
+    align-items: center;
+    border: 1px solid rgba(53, 240, 106, 0.55);
+    display: flex;
+    gap: 8px;
+    min-height: 42px;
+    padding: 8px 10px;
+}
+
+.check-row input {
+    min-height: auto;
+    width: auto;
+}
+
 .condition-list {
     display: grid;
     gap: 8px;
@@ -389,6 +412,51 @@ h3 {
 .condition-row em {
     color: rgba(229, 247, 213, 0.74);
     font-size: 13px;
+    font-style: normal;
+}
+
+.consumable-row > div:first-child {
+    gap: 8px;
+    width: 100%;
+}
+
+.consumable-meter {
+    display: grid;
+    gap: 6px;
+    min-width: min(320px, 100%);
+}
+
+.counter-controls {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.compact-number {
+    min-height: 34px;
+    max-width: 86px;
+    padding: 5px 8px;
+}
+
+.compact-number.current-value {
+    max-width: 120px;
+}
+
+.omen-block {
+    display: grid;
+    gap: 10px;
+}
+
+.omen-display {
+    border: 1px solid rgba(53, 240, 106, 0.28);
+    display: grid;
+    gap: 4px;
+    padding: 8px;
+}
+
+.omen-display em {
+    color: rgba(229, 247, 213, 0.74);
     font-style: normal;
 }
 
